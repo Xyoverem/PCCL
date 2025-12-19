@@ -1,6 +1,11 @@
 #pragma once
 
 #include <base/registry.h>
+#include <base/ir.h>
+#include <functional>
+#include <memory>
+#include <unordered_map>
+#include <string>
 
 namespace engine_c {
 
@@ -37,11 +42,57 @@ struct GraphBufferLayout {
   unsigned int num_queues;
 };
 
+struct OperatorInfo {
+  std::string name;
+  OpType op_type;
+  ExecutorType executor_type;
+  std::function<std::shared_ptr<Op>(const std::unordered_map<std::string, std::string>&)> factory;
+  std::unordered_map<std::string, std::string> default_params;
+};
+
+struct ExecutionContext {
+  int rank;
+  int world_size;
+  class ClusterManager* cluster;
+  class BufferManager* buffers;
+
+  ExecutionContext() : rank(0), world_size(1), cluster(nullptr), buffers(nullptr) {}
+};
+
 class OperatorManager {
 public:
   OperatorManager();
+  ~OperatorManager() = default;
 
-  
+  void registerOperator(const OperatorInfo& info);
+  void registerOperator(const std::string& name, OpType op_type, ExecutorType executor_type,
+                       std::function<std::shared_ptr<Op>(const std::unordered_map<std::string, std::string>&)> factory,
+                       const std::unordered_map<std::string, std::string>& default_params = {});
+
+  bool isOperatorRegistered(const std::string& name) const;
+
+  std::shared_ptr<Op> createOperator(const std::string& name, const std::unordered_map<std::string, std::string>& params = {});
+
+  const OperatorInfo* getOperatorInfo(const std::string& name) const;
+
+  std::vector<std::string> getRegisteredOperators() const;
+
+  void executeOperator(const std::string& name, const std::unordered_map<std::string, std::string>& params = {});
+
+  void loadOperatorFromFile(const std::string& filepath);
+
+  // New methods for Engine integration
+  void registerOperator(const std::string& name, const std::string& filepath);
+  std::shared_ptr<Op> getOperator(const std::string& name);
+  void setClusterInfo(const std::unordered_map<std::string, std::string>& cluster_info);
+
+  void clear();
+
+private:
+  std::unordered_map<std::string, OperatorInfo> operators_;
+  std::unordered_map<std::string, std::string> cluster_info_;
+
+  void initializeBuiltInOperators();
 };
 
 }

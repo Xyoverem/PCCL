@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include "ATen/core/TensorBody.h"
 #include <cluster/manager.h>
@@ -7,6 +7,7 @@
 #include <torch/extension.h>
 #include <memory>
 #include <string>
+#include <cstring>
 
 namespace engine_c {
 

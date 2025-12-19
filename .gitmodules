@@ -7,15 +7,6 @@
 [submodule "thirdparty/composable_kernel"]
 	path = thirdparty/composable_kernel
 	url = https://github.com/ROCm/composable_kernel.git
-[submodule "thirdparty/hwloc"]
-	path = thirdparty/hwloc
-	url = https://github.com/open-mpi/hwloc.git
 [submodule "thirdparty/spdlog"]
 	path = thirdparty/spdlog
 	url = https://github.com/gabime/spdlog.git
-[submodule "thirdparty/asio"]
-	path = thirdparty/asio
-	url = https://github.com/chriskohlhoff/asio.git
-[submodule "thirdparty/nvshmem"]
-	path = thirdparty/nvshmem
-	url = https://github.com/NVIDIA/nvshmem.git

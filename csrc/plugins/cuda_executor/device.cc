@@ -31,7 +31,7 @@ struct MemInfo {
     nlohmann::json j;
     j["size"] = size;
     j["ptr"] = ptr;
-    j["shareable"] = utils::serialize(shareable_handle, 
+    j["shareable"] = utils::serialize(shareable_handle,
                                              sizeof(shareable_handle));
     return j.dump();
   }
@@ -120,12 +120,12 @@ void* CudaDevice::allocate(long nbytes) {
 
   std::lock_guard<std::mutex> lock(mem_mutex);
 
-  mem_map[reinterpret_cast<void*>(dev_ptr)] = {nbytes, 
-                                               alloc_handle, 
+  mem_map[reinterpret_cast<void*>(dev_ptr)] = {nbytes,
+                                               alloc_handle,
                                                dev_ptr};
-  
-  memcpy(mem_map[reinterpret_cast<void*>(dev_ptr)].shareable_handle, 
-         shareable_handle, 
+
+  memcpy(mem_map[reinterpret_cast<void*>(dev_ptr)].shareable_handle,
+         shareable_handle,
          sizeof(shareable_handle));
 
   return reinterpret_cast<void*>(dev_ptr);
@@ -167,7 +167,6 @@ long CudaDevice::mapBuffer(std::string &shareable_handle, void **addr) {
     return 0;
   }
 
-  // alignment
   mem_info.size = (mem_info.size + granularity - 1) / granularity * granularity;
 
   result = cuMemAddressReserve(&ptr, mem_info.size, granularity, 0, 0);
@@ -179,9 +178,9 @@ long CudaDevice::mapBuffer(std::string &shareable_handle, void **addr) {
   result = cuMemMap(ptr,
                     mem_info.size,
                     0,
-                    mem_info.alloc_handle, 
+                    mem_info.alloc_handle,
                     0);
-  
+
   if (result != CUDA_SUCCESS) {
     cuMemRelease(mem_info.alloc_handle);
     cuMemAddressFree(ptr, mem_info.size);

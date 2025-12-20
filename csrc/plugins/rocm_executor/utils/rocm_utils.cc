@@ -432,12 +432,8 @@ int ROCmUtils::getArchComputeCapability(const std::string& arch) {
     return 0;
   }
 
-  try {
-    int gfx_version = std::stoi(arch.substr(3, 2));
-    return gfx_version;
-  } catch (const std::exception&) {
-    return 0;
-  }
+  int gfx_version = std::stoi(arch.substr(3, 2));
+  return gfx_version;
 }
 
 void ROCmUtils::initializeDeviceProperties() {

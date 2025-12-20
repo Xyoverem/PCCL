@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 PCCL Chunk-Level Communication Examples
 Demonstrates fine-grained control over individual chunks of data
@@ -19,7 +18,7 @@ class ChunkController:
         self.operations = []
 
     def create_chunks(self, tensor: torch.Tensor, chunk_size: int) -> List[Chunk]:
-        """Split tensor into chunks"""
+        
         chunks = []
         flat_tensor = tensor.flatten()
         num_chunks = (flat_tensor.numel() + chunk_size - 1) // chunk_size
@@ -42,7 +41,7 @@ class ChunkController:
         return chunks
 
     def send_chunk(self, chunk: Chunk, source_rank: int, dest_rank: int, tag: int = 0):
-        """Send specific chunk to destination"""
+        
         send_op = {
             'type': 'send',
             'chunk': chunk,
@@ -55,7 +54,7 @@ class ChunkController:
 
     def recv_chunk(self, chunk_id: str, source_rank: int, dest_rank: int,
                    size: int, shape: Tuple, dtype: torch.dtype, tag: int = 0):
-        """Receive specific chunk from source"""
+        
         recv_chunk = Chunk.create_empty(
             size=size,
             device=self.devices[dest_rank],
@@ -75,7 +74,7 @@ class ChunkController:
         return recv_op
 
     def reduce_chunks(self, chunks: List[Chunk], ranks: List[int], reduce_op: str = "sum"):
-        """Reduce multiple chunks across specified ranks"""
+        
         reduce_op_dict = {
             'type': 'reduce',
             'chunks': chunks,
@@ -87,7 +86,7 @@ class ChunkController:
 
 @communication
 class BasicChunkTransfer:
-    """Basic example: send specific chunks between ranks"""
+    
 
     def selective_transfer(self, tensor, source_rank, dest_ranks, chunk_mapping):
         """
@@ -104,7 +103,6 @@ class BasicChunkTransfer:
                 dest_rank = chunk_mapping[chunk_idx]
 
                 if self.rank == source_rank:
-                    # Send chunk
                     send_op = send(
                         destination=dest_rank,
                         tag=chunk_idx,
@@ -114,7 +112,6 @@ class BasicChunkTransfer:
                     print(f"Rank {source_rank}: Sent chunk {chunk_idx} to rank {dest_rank}")
 
                 elif self.rank == dest_rank:
-                    # Receive chunk
                     recv_op = recv(
                         source=source_rank,
                         tag=chunk_idx,
@@ -128,34 +125,29 @@ class BasicChunkTransfer:
 
 @communication
 class ChunkBasedAllReduce:
-    """Custom AllReduce using chunk-level control"""
+    
 
     def custom_ring_allreduce(self, tensor, participants):
-        """Implement ring allreduce with explicit chunk control"""
+        
         chunk_size = 128
         num_chunks = (tensor.numel() + chunk_size - 1) // chunk_size
         chunks = self._split_tensor(tensor, chunk_size)
 
         results = []
 
-        # Phase 1: Scatter-Reduce
         for step in range(len(participants)):
             for chunk_idx, chunk in enumerate(chunks):
-                # Each chunk has a different target in ring pattern
                 target_rank = participants[(self.rank + step) % len(participants)]
                 source_rank = participants[(self.rank - step) % len(participants)]
 
                 if chunk_idx % len(participants) == self.rank:
-                    # This rank owns this chunk in this step
                     if step < len(participants) - 1:
-                        # Send to next rank in ring
                         send_op = send(
                             destination=target_rank,
                             tag=f"scatter_{chunk_idx}_{step}",
                             data=chunk
                         )
 
-                        # Receive from previous rank in ring
                         recv_op = recv(
                             source=source_rank,
                             tag=f"scatter_{chunk_idx}_{step}",
@@ -163,21 +155,17 @@ class ChunkBasedAllReduce:
                             dtype=chunk.dtype
                         )
 
-                        # Reduce received chunk with local chunk
                         received_data = recv_op.execute()
                         reduced_chunk = chunk + received_data
                         results.append(reduced_chunk)
                     else:
                         results.append(chunk)
-
-        # Phase 2: AllGather
         final_chunks = [None] * num_chunks
         for step in range(len(participants)):
             for chunk_idx in range(num_chunks):
                 owner_rank = chunk_idx % len(participants)
 
                 if self.rank == owner_rank:
-                    # Send reduced chunk to next rank
                     target_rank = participants[(self.rank + 1) % len(participants)]
                     send_op = send(
                         destination=target_rank,
@@ -187,7 +175,6 @@ class ChunkBasedAllReduce:
                     send_op.execute(results[chunk_idx])
 
                 else:
-                    # Receive reduced chunk from previous rank
                     source_rank = participants[(self.rank - 1) % len(participants)]
                     recv_op = recv(
                         source=source_rank,
@@ -196,20 +183,17 @@ class ChunkBasedAllReduce:
                         dtype=results[chunk_idx].dtype
                     )
                     final_chunks[chunk_idx] = recv_op.execute()
-
-        # Reconstruct final tensor
         return torch.cat(final_chunks).reshape(tensor.shape)
 
 @communication
 class HierarchicalChunkCommunication:
-    """Hierarchical communication with chunk-based routing"""
+    
 
     def hierarchical_transfer(self, tensor, world_size):
-        """Two-level hierarchy: intra-node and inter-node"""
+        
         chunk_size = 256
         chunks = self._split_tensor(tensor, chunk_size)
 
-        # Assume 4 nodes, 4 ranks per node
         ranks_per_node = 4
         my_node = self.rank // ranks_per_node
         local_rank = self.rank % ranks_per_node
@@ -218,9 +202,7 @@ class HierarchicalChunkCommunication:
 
         for chunk_idx, chunk in enumerate(chunks):
             if chunk_idx % 2 == 0:
-                # Even chunks: intra-node communication
                 if local_rank == 0:
-                    # Node leader aggregates local chunks
                     for rank in range(1, ranks_per_node):
                         recv_op = recv(
                             source=my_node * ranks_per_node + rank,
@@ -231,7 +213,6 @@ class HierarchicalChunkCommunication:
                         local_chunk = recv_op.execute()
                         chunk = chunk + local_chunk
 
-                    # Broadcast result to local ranks
                     for rank in range(1, ranks_per_node):
                         send_op = send(
                             destination=my_node * ranks_per_node + rank,
@@ -242,7 +223,6 @@ class HierarchicalChunkCommunication:
                     results.append(chunk)
 
                 else:
-                    # Send to node leader
                     send_op = send(
                         destination=my_node * ranks_per_node,
                         tag=f"local_{chunk_idx}",
@@ -250,7 +230,6 @@ class HierarchicalChunkCommunication:
                     )
                     send_op.execute(chunk)
 
-                    # Receive broadcast from node leader
                     recv_op = recv(
                         source=my_node * ranks_per_node,
                         tag=f"local_bcast_{chunk_idx}",
@@ -260,14 +239,11 @@ class HierarchicalChunkCommunication:
                     results.append(recv_op.execute())
 
             else:
-                # Odd chunks: inter-node communication
                 if local_rank == 0:
-                    # Only node leaders participate
                     target_node = (my_node + 1) % (world_size // ranks_per_node)
                     target_rank = target_node * ranks_per_node
 
                     if my_node == 0:
-                        # Root node sends
                         send_op = send(
                             destination=target_rank,
                             tag=f"inter_{chunk_idx}",
@@ -276,7 +252,6 @@ class HierarchicalChunkCommunication:
                         send_op.execute(chunk)
                         results.append(chunk)
                     elif my_node == 1:
-                        # Target node receives
                         recv_op = recv(
                             source=target_rank - ranks_per_node,
                             tag=f"inter_{chunk_idx}",
@@ -291,26 +266,22 @@ class HierarchicalChunkCommunication:
 
 @communication
 class AdaptiveChunkRouting:
-    """Adaptive routing based on chunk size and network conditions"""
+    
 
     def adaptive_communication(self, tensor, participants):
-        """Route chunks based on their characteristics"""
-        chunk_sizes = [32, 64, 128, 256, 512]  # Different chunk sizes
+        
+        chunk_sizes = [32, 64, 128, 256, 512]
         results = []
 
         for chunk_size in chunk_sizes:
             chunks = self._split_tensor(tensor, chunk_size)
 
             for chunk_idx, chunk in enumerate(chunks):
-                # Choose communication method based on chunk size
                 if chunk.numel() <= 1024:
-                    # Small chunks: use direct send/recv
                     method = "direct"
                 elif chunk.numel() <= 4096:
-                    # Medium chunks: use tree-based reduction
                     method = "tree"
                 else:
-                    # Large chunks: use ring allreduce
                     method = "ring"
 
                 result = self._communicate_chunk(chunk, method, participants, chunk_idx)
@@ -319,10 +290,9 @@ class AdaptiveChunkRouting:
         return torch.cat(results).reshape(tensor.shape)
 
     def _communicate_chunk(self, chunk, method, participants, chunk_idx):
-        """Communicate a single chunk using specified method"""
+        
         if method == "direct":
             if self.rank == 0:
-                # Send directly to all others
                 for rank in participants[1:]:
                     send_op = send(
                         destination=rank,
@@ -332,7 +302,6 @@ class AdaptiveChunkRouting:
                     send_op.execute(chunk)
                 return chunk
             else:
-                # Receive from rank 0
                 recv_op = recv(
                     source=0,
                     tag=f"direct_{chunk_idx}",
@@ -342,11 +311,9 @@ class AdaptiveChunkRouting:
                 return recv_op.execute()
 
         elif method == "tree":
-            # Tree-based reduction
             return self._tree_reduce_chunk(chunk, participants, chunk_idx)
 
         elif method == "ring":
-            # Ring allreduce for this chunk only
             ring_op = allreduce(
                 algorithm="ring",
                 participants=participants,
@@ -355,7 +322,7 @@ class AdaptiveChunkRouting:
             return ring_op.execute(chunk)
 
     def _tree_reduce_chunk(self, chunk, participants, chunk_idx):
-        """Tree reduction for a single chunk"""
+        
         tree_fanout = 2
         level = 0
 
@@ -366,9 +333,7 @@ class AdaptiveChunkRouting:
                 group = participants[i:i+tree_fanout]
 
                 if i // tree_fanout == self.rank // (tree_fanout ** (level + 1)):
-                    # This group participates in this level
                     if self.rank == group[0]:
-                        # Root of this subtree
                         for child_rank in group[1:]:
                             recv_op = recv(
                                 source=child_rank,
@@ -380,7 +345,6 @@ class AdaptiveChunkRouting:
                             chunk = chunk + child_chunk
                         next_participants.append(group[0])
                     else:
-                        # Send to parent
                         parent_rank = group[0]
                         send_op = send(
                             destination=parent_rank,
@@ -399,10 +363,10 @@ class AdaptiveChunkRouting:
 
 @communication
 class PipelineChunkCommunication:
-    """Pipeline communication with overlapping compute and comm"""
+    
 
     def pipeline_allreduce(self, tensor, participants, num_stages=4):
-        """Pipelined allreduce with overlapping stages"""
+        
         chunk_size = tensor.numel() // num_stages
         chunks = self._split_tensor(tensor, chunk_size)
 
@@ -412,9 +376,7 @@ class PipelineChunkCommunication:
             for chunk_idx in range(stage, len(chunks), num_stages):
                 chunk = chunks[chunk_idx]
 
-                # Start communication for this chunk
                 if chunk_idx < len(chunks) - 1:
-                    # Non-blocking send/receive for overlap
                     if self.rank == 0:
                         send_op = send(
                             destination=participants[1],
@@ -423,12 +385,10 @@ class PipelineChunkCommunication:
                         )
                         send_future = send_op.execute_async(chunk)
 
-                        # Overlap with computation on next chunk
                         if chunk_idx + num_stages < len(chunks):
                             next_chunk = chunks[chunk_idx + num_stages]
                             computed_chunk = self._compute_on_chunk(next_chunk)
 
-                        # Wait for communication to complete
                         pipeline_results[chunk_idx] = send_future.wait()
                     else:
                         recv_op = recv(
@@ -439,14 +399,12 @@ class PipelineChunkCommunication:
                         )
                         recv_future = recv_op.execute_async()
 
-                        # Overlap with computation
                         if chunk_idx + num_stages < len(chunks):
                             next_chunk = chunks[chunk_idx + num_stages]
                             computed_chunk = self._compute_on_chunk(next_chunk)
 
                         pipeline_results[chunk_idx] = recv_future.wait()
                 else:
-                    # Last stage: simple allreduce
                     allreduce_op = allreduce(
                         algorithm="ring",
                         participants=participants,
@@ -457,11 +415,11 @@ class PipelineChunkCommunication:
         return torch.cat(pipeline_results).reshape(tensor.shape)
 
     def _compute_on_chunk(self, chunk):
-        """Simulate computation on chunk"""
+        
         return chunk * 2  # Simple computation
 
 def demonstrate_chunk_control():
-    """Demonstrate all chunk-level communication patterns"""
+    
     print("=== PCCL Chunk-Level Communication Examples ===\n")
 
     devices = [Device(rank=i, device_type="cuda") for i in range(4)]
@@ -532,7 +490,6 @@ def demonstrate_chunk_control():
     print("\n6. Direct IR-Level Chunk Control")
     print("-" * 35)
     try:
-        # Create IR builder and manually control chunks
         builder = IRBuilder()
         data = torch.randn(512, device="cuda")
         chunk_size = 128
@@ -543,11 +500,9 @@ def demonstrate_chunk_control():
             chunk = builder.create_value(chunk_tensor, devices[0])
             chunks.append(chunk)
 
-        # Manual chunk routing
         operations = []
         for i, chunk in enumerate(chunks):
             if i % 2 == 0:
-                # Send even chunks to rank 1
                 send_op = builder.create_send(
                     source=chunk,
                     source_device=devices[0],
@@ -556,7 +511,6 @@ def demonstrate_chunk_control():
                 )
                 operations.append(send_op)
             else:
-                # Send odd chunks to rank 2
                 send_op = builder.create_send(
                     source=chunk,
                     source_device=devices[0],
@@ -573,24 +527,24 @@ def demonstrate_chunk_control():
         print(f"✗ IR-level chunk control failed: {e}")
 
 def demonstrate_chunk_performance_patterns():
-    """Show performance-oriented chunk communication patterns"""
+    
     print("\n\n=== Performance-Oriented Chunk Patterns ===\n")
 
     print("1. Bandwidth-Optimized Large Chunks")
     print("-" * 40)
-    large_chunk_tensor = torch.randn(10240, device="cuda")  # 40KB chunks
+    large_chunk_tensor = torch.randn(10240, device="cuda")
     print(f"Large chunk size: {large_chunk_tensor.numel() * 4 / 1024:.1f} KB")
     print("Recommended: Direct transfer, minimal overhead")
 
     print("\n2. Latency-Optimized Small Chunks")
     print("-" * 38)
-    small_chunk_tensor = torch.randn(64, device="cuda")  # 256B chunks
+    small_chunk_tensor = torch.randn(64, device="cuda")
     print(f"Small chunk size: {small_chunk_tensor.numel() * 4:.0f} B")
     print("Recommended: Batch multiple chunks, tree reduction")
 
     print("\n3. Balanced Medium Chunks")
     print("-" * 28)
-    medium_chunk_tensor = torch.randn(512, device="cuda")  # 2KB chunks
+    medium_chunk_tensor = torch.randn(512, device="cuda")
     print(f"Medium chunk size: {medium_chunk_tensor.numel() * 4 / 1024:.1f} KB")
     print("Recommended: Ring allreduce, pipeline overlap")
 

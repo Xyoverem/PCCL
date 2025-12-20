@@ -141,7 +141,7 @@ class CpuThreadPool:
             try:
                 self._native = _cpu_native.CpuThreadPool(num_threads)
             except Exception as e:
-                print(f"Failed to initialize CPU thread pool: {e")
+                print(f"Failed to initialize CPU thread pool: {e}")
                 self._pool = None
         else:
             import concurrent.futures

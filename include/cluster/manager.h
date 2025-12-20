@@ -39,28 +39,23 @@ public:
   ClusterManager(const std::map<std::string, std::string>& config);
   ~ClusterManager();
 
-  // Core cluster management
   std::string exportEndpoint();
   void joinCluster(const std::string& master_endpoint);
   void exitCluster();
 
-  // Node management
   const NodeMeta& getLocalMeta();
   const std::map<int, NodeMeta>& getAllNodes();
   bool addOrUpdateNode(const NodeMeta& node_meta);
 
-  // Operator management
   void registerOperator(const std::string& name, const std::string& config);
   void unregisterOperator(const std::string& name);
   std::map<std::string, std::string> getClusterInfo();
 
-  // Communication
   bool connectToNode(int rank, const std::string& endpoint);
   void disconnectFromNode(int rank);
   bool isConnectedTo(int rank);
   std::vector<int> getConnectedNodes();
 
-  // Event handling
   void registerConnectionCallback(std::function<void(int)> callback);
   void registerDisconnectionCallback(std::function<void(int)> callback);
 
@@ -82,7 +77,6 @@ private:
   std::unique_ptr<std::thread> listener_thread_;
   std::atomic<bool> shutdown_;
 
-  // Internal methods
   void startListener();
   void stopListener();
   void handleNewConnections();

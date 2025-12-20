@@ -14,13 +14,28 @@ class CommunicationOperator:
     compiled_plan: Optional[ExecutionPlan] = None
     _execution_handle: Optional[Any] = None
 
-    def compile(self, participants: Optional[List[int]] = None) -> ExecutionPlan:
+    def compile(self, participants: Optional[List[int]] = None, use_integrated_lowering: bool = True) -> ExecutionPlan:
         """Compile the operator to an execution plan"""
-        compiler = DSLCompiler()
-        plan = compiler.compile(self.config, participants)
-        optimized_plan = compiler.optimize(plan)
-        self.compiled_plan = optimized_plan
-        return optimized_plan
+        if use_integrated_lowering:
+            # Use the new integrated compiler with full IR lowering
+            try:
+                from .integrated_compiler import IntegratedCompiler, HardwareType
+                compiler = IntegratedCompiler(HardwareType.CUDA)  # Default to CUDA
+                integrated_plan = compiler.compile(self.config, participants)
+                self.compiled_plan = integrated_plan.execution_plan
+                self.integrated_plan = integrated_plan  # Store for access to IR lowering info
+                return integrated_plan.execution_plan
+            except Exception as e:
+                print(f"⚠️  Integrated lowering failed, falling back to DSL compiler: {e}")
+                use_integrated_lowering = False
+
+        if not use_integrated_lowering:
+            # Fall back to original DSL compiler
+            compiler = DSLCompiler()
+            plan = compiler.compile(self.config, participants)
+            optimized_plan = compiler.optimize(plan)
+            self.compiled_plan = optimized_plan
+            return optimized_plan
 
     def execute(self, input_data: Any, participants: Optional[List[int]] = None) -> Any:
         """Execute the communication operator"""
@@ -55,6 +70,20 @@ class CommunicationOperator:
 
         compiler = DSLCompiler()
         return compiler.estimate_cost(self.compiled_plan)
+
+    def get_lowering_info(self) -> Optional[Dict[str, Any]]:
+        """Get IR lowering information if integrated compiler was used"""
+        if hasattr(self, 'integrated_plan') and self.integrated_plan:
+            from .integrated_compiler import IntegratedCompiler
+            compiler = IntegratedCompiler(HardwareType.CUDA)
+            return compiler.get_lowering_statistics(self.integrated_plan)
+        return None
+
+    def get_json_output(self) -> Optional[str]:
+        """Get JSON output for C++ runtime if integrated compiler was used"""
+        if hasattr(self, 'integrated_plan') and self.integrated_plan:
+            return self.integrated_plan.json_output
+        return None
 
 class Allreduce(CommunicationOperator):
     """AllReduce collective communication operator"""
@@ -330,7 +359,6 @@ class OperatorRegistry:
         )
         self.register_pattern("tree_allreduce", tree_pattern)
 
-# Global operator registry
 registry = OperatorRegistry()
 
 def compile(operator_or_config, participants: Optional[List[int]] = None) -> Union[ExecutionPlan, CommunicationOperator]:

@@ -10,35 +10,6 @@ from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDA_HOME
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
-def build_hwloc(build_libs, make_jobs=None, verbose=False):
-    build_libs = os.path.abspath(os.path.expanduser(build_libs))
-    if not os.path.isdir(build_libs):
-        os.makedirs(build_libs)
-
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    hwloc_path = os.path.join(current_dir, 'thirdparty', 'hwloc')
-    if not os.path.isdir(hwloc_path):
-        raise FileNotFoundError(hwloc_path)
-
-    make_jobs = make_jobs or (os.cpu_count() or 1)
-
-    def _run(cmd, cwd=None):
-        cwd = cwd or hwloc_path
-        if verbose:
-            print(' '.join(cmd))
-        subprocess.run(cmd, cwd=cwd, capture_output=not verbose, text=True, check=False)
-
-    _run(['./autogen.sh'])
-    _run(['./configure'])
-    _run(['make', '-j{}'.format(make_jobs)])
-
-    src_so = os.path.join(hwloc_path, 'hwloc', '.libs', 'libhwloc.so.0.0.0')
-    if not os.path.isfile(src_so):
-        raise FileNotFoundError(src_so)
-
-    dst_so = os.path.join(build_libs, 'libhwloc.so')
-    shutil.copy2(src_so, dst_so)
-
 def get_all_files(directory):
     all_files = glob.glob(os.path.join(directory, "**", "*"), recursive=True)
     files = [f[len(current_dir)+1:] for f in all_files if os.path.isfile(f)]
@@ -61,7 +32,6 @@ build_include_dirs = [
     f'{current_dir}/thirdparty/cutlass/include',
     f'{current_dir}/thirdparty/composable_kernel/include',
     f'{current_dir}/thirdparty/json/include',
-    f'{current_dir}/thirdparty/hwloc/include',
     f'{current_dir}/thirdparty/spdlog/include',
     f'{current_dir}/thirdparty/asio/asio/include',
 ]
@@ -124,7 +94,6 @@ if __name__ == '__main__':
         )
     ]
 
-    # CPU Plugin (always available)
     cpu_sources = [
         'csrc/plugins/cpu_executor/device.cc',
         'csrc/plugins/cpu_executor/executor.cc',
@@ -146,7 +115,6 @@ if __name__ == '__main__':
         )
     )
 
-    # CUDA Plugin (if CUDA is available)
     if CUDA_HOME:
         cuda_sources = [
             'csrc/plugins/cuda_executor/device.cc',
@@ -169,7 +137,6 @@ if __name__ == '__main__':
             )
         )
 
-    # RDMA Plugin (if libraries are available)
     try:
         import subprocess
         result = subprocess.run(['pkg-config', '--exists', 'libibverbs'],
@@ -187,7 +154,6 @@ if __name__ == '__main__':
                 f'{current_dir}/csrc/plugins/rdma_executor/utils'
             ]
 
-            # Get RDMA library flags
             rdma_libs_result = subprocess.run(['pkg-config', '--libs', 'libibverbs', 'librdmacm'],
                                             capture_output=True, text=True)
             rdma_libs = rdma_libs_result.stdout.strip().split() if rdma_libs_result.returncode == 0 else ['ibverbs', 'rdmacm']
@@ -211,9 +177,8 @@ if __name__ == '__main__':
                 )
             )
     except:
-        pass  # RDMA not available
+        pass
 
-    # ROCm Plugin (if ROCm is available)
     if has_rocm:
         rocm_sources = [
             'csrc/plugins/rocm_executor/device.cc',

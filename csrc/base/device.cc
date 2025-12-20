@@ -6,7 +6,6 @@
 
 namespace engine_c {
 
-// AllocatorBase implementations
 bool AllocatorBase::allocatorAvailable() {
   return false;
 }
@@ -19,7 +18,6 @@ void AllocatorBase::deallocate(void* ptr) {
   throw std::runtime_error("AllocatorBase::deallocate() not implemented");
 }
 
-// RemoteCommunicatorBase implementations
 bool RemoteCommunicatorBase::remoteCommAvailable() {
   return false;;
 }
@@ -44,7 +42,6 @@ void RemoteCommunicatorBase::disconnect(std::string handle) {
   throw std::runtime_error("RemoteCommunicatorBase::disconnect() not implemented");
 }
 
-// IpcCommunicatorBase implementations
 bool IpcCommunicatorBase::IPCAvailable() {
   return false;
 }
@@ -61,7 +58,6 @@ long IpcCommunicatorBase::mapBuffer(std::string& shareable_ShareableHandle, void
   throw std::runtime_error("IpcCommunicatorBase::mapBuffer() not implemented");
 }
 
-// getDev function implementation
 std::shared_ptr<DeviceBase> getDev(DeviceType device_type) {
   throw std::runtime_error("getDev() not implemented for device type: " + std::to_string(device_type));
 }

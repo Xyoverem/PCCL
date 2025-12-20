@@ -51,20 +51,16 @@ void RdmaDevice::connect(std::string handle) {
     return;
   }
 
-  try {
-    auto j = nlohmann::json::parse(handle);
-    std::string ip = j["ip"];
-    int port = j["port"];
+  auto j = nlohmann::json::parse(handle);
+  std::string ip = j["ip"];
+  int port = j["port"];
 
-    engine_c::network::NetworkAddress addr(ip, port);
-    auto& network_manager = engine_c::network::NetworkManager::getInstance();
-    auto conn = network_manager.createConnection();
+  engine_c::network::NetworkAddress addr(ip, port);
+  auto& network_manager = engine_c::network::NetworkManager::getInstance();
+  auto conn = network_manager.createConnection();
 
-    if (conn) {
-      conn->connect(addr);
-    }
-  } catch (const std::exception& e) {
-    return;
+  if (conn) {
+    conn->connect(addr);
   }
 }
 

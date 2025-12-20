@@ -705,26 +705,22 @@ VerbsManager::QPId VerbsManager::createQP(ConnectionId conn_id, const QPConfig& 
     
   QPId qp_id = generateQPId();
   
-  try {
-    ibv_qp_init_attr init_attr;
-    std::memset(&init_attr, 0, sizeof(init_attr));
-    init_attr.qp_type = config.qp_type;
-    init_attr.send_cq = it->second.cq->get();
-    init_attr.recv_cq = it->second.cq->get();
-    init_attr.cap.max_send_wr = config.max_send_wr;
-    init_attr.cap.max_recv_wr = config.max_recv_wr;
-    init_attr.cap.max_send_sge = config.max_send_sge;
-    init_attr.cap.max_recv_sge = config.max_recv_sge;
-    init_attr.cap.max_inline_data = config.max_inline_data;
-    init_attr.sq_sig_all = 0;
-    
-    auto qp = std::make_shared<VerbsQueuePair>(*pd_, init_attr);
-    it->second.qps[qp_id] = qp;
-    
-    return qp_id;
-  } catch (const std::exception& e) {
-    return 0;
-  }
+  ibv_qp_init_attr init_attr;
+  std::memset(&init_attr, 0, sizeof(init_attr));
+  init_attr.qp_type = config.qp_type;
+  init_attr.send_cq = it->second.cq->get();
+  init_attr.recv_cq = it->second.cq->get();
+  init_attr.cap.max_send_wr = config.max_send_wr;
+  init_attr.cap.max_recv_wr = config.max_recv_wr;
+  init_attr.cap.max_send_sge = config.max_send_sge;
+  init_attr.cap.max_recv_sge = config.max_recv_sge;
+  init_attr.cap.max_inline_data = config.max_inline_data;
+  init_attr.sq_sig_all = 0;
+
+  auto qp = std::make_shared<VerbsQueuePair>(*pd_, init_attr);
+  it->second.qps[qp_id] = qp;
+
+  return qp_id;
 }
 
 bool VerbsManager::modifyQPToInit(ConnectionId conn_id, QPId qp_id) {
@@ -931,4 +927,6 @@ VerbsManager::QPId VerbsManager::generateQPId() {
   return next_qp_id_++;
 }
 
-} // namespace pccl::communicator
+}
+
+}

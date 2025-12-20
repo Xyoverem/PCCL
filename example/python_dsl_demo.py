@@ -20,7 +20,7 @@ from pccl.lang import (
 
 @communication
 class SimpleAllReduce:
-    """Simple AllReduce communication pattern"""
+    
     allreduce_op: pccl.Allreduce = pccl.lang.allreduce(
         reduce_op="sum",
         algorithm="ring",
@@ -30,7 +30,7 @@ class SimpleAllReduce:
 
 @communication
 class TrainingCommunication:
-    """Communication pattern for distributed training"""
+    
     gradient_allreduce: pccl.Allreduce = pccl.lang.allreduce(
         reduce_op="sum",
         algorithm="hierarchical",
@@ -45,7 +45,7 @@ class TrainingCommunication:
     )
 
 def demonstrate_basic_dsl():
-    """Demonstrate basic DSL usage"""
+    
     print("=== Basic DSL Demo ===")
 
     simple_comm = SimpleAllReduce()
@@ -65,7 +65,7 @@ def demonstrate_basic_dsl():
         print(f"DSL execution failed: {e}")
 
 def demonstrate_config_builder():
-    """Demonstrate configuration builder pattern"""
+    
     print("\n=== Configuration Builder Demo ===")
 
     ring_config = ConfigBuilder.ring_allreduce(
@@ -95,7 +95,7 @@ def demonstrate_config_builder():
     print(f"  Inter-bandwidth: {hierarchical_config.topology.inter_bandwidth}GB/s")
 
 def demonstrate_direct_operators():
-    """Demonstrate direct operator creation"""
+    
     print("\n=== Direct Operators Demo ===")
 
     allreduce_op = pccl.Allreduce(
@@ -135,7 +135,7 @@ def demonstrate_direct_operators():
         print(f"Direct operator execution failed: {e}")
 
 def demonstrate_topology_discovery():
-    """Demonstrate automatic topology discovery"""
+    
     print("\n=== Topology Discovery Demo ===")
 
     discovery = TopologyDiscovery()
@@ -154,7 +154,7 @@ def demonstrate_topology_discovery():
     print(f"  Links: {len(topology['links'])}")
 
 def demonstrate_manual_topology():
-    """Demonstrate manual topology construction"""
+    
     print("\n=== Manual Topology Demo ===")
 
     devices = [0, 1, 2, 3]
@@ -184,7 +184,7 @@ def demonstrate_manual_topology():
     print(f"  Total bandwidth: {hier_topo['metrics'].total_bandwidth}GB/s")
 
 def demonstrate_compilation_optimization():
-    """Demonstrate compilation and optimization"""
+    
     print("\n=== Compilation & Optimization Demo ===")
 
     config = ConfigBuilder.tree_allreduce(
@@ -216,7 +216,7 @@ def demonstrate_compilation_optimization():
         print(f"Compilation failed: {e}")
 
 def demonstrate_composite_operators():
-    """Demonstrate composite operators"""
+    
     print("\n=== Composite Operators Demo ===")
 
     allreduce_op = pccl.Allreduce(
@@ -251,7 +251,7 @@ def demonstrate_composite_operators():
         print(f"Composite execution failed: {e}")
 
 def demonstrate_registry():
-    """Demonstrate operator registry"""
+    
     print("\n=== Operator Registry Demo ===")
 
     print(f"Available operators: {pccl.lang.registry.list_operators()}")
@@ -271,7 +271,7 @@ def demonstrate_registry():
         print(f"Created AllReduce via registry: {allreduce_op.name}")
 
 def demonstrate_async_execution():
-    """Demonstrate asynchronous execution"""
+    
     print("\n=== Async Execution Demo ===")
 
     allreduce_op = pccl.Allreduce(
@@ -298,7 +298,7 @@ def demonstrate_async_execution():
         print(f"Async execution failed: {e}")
 
 def main():
-    """Main demonstration function"""
+    
     print("PCCL Python DSL Demonstration")
     print("=" * 50)
 

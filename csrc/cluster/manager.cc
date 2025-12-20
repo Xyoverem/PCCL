@@ -40,17 +40,15 @@ ClusterManager::ClusterManager(const std::map<std::string, std::string>& config)
 
   config_ = config;
 
-  // Extract local rank from config
   auto rank_it = config.find("rank");
   if (rank_it != config.end()) {
     local_rank_ = std::stoi(rank_it->second);
   }
 
-  // Create local node metadata
   NodeMeta local_node;
   local_node.rank = local_rank_;
   local_node.host_id = config.at("host_id");
-  local_node.port = 0; // Will be set when listener starts
+  local_node.port = 0;
   local_node.endpoint_configs = config;
 
   nodes_[local_rank_] = local_node;
@@ -77,16 +75,13 @@ void ClusterManager::joinCluster(const std::string& master_endpoint) {
     throw std::runtime_error("Already acting as master node");
   }
 
-  // Connect to master node
   if (!connectToNode(0, master_endpoint)) {
     throw std::runtime_error("Failed to connect to master node at: " + master_endpoint);
   }
 
-  // Send local node info to master
   int master_socket = connections_[0].socket_fd;
   sendNodeInfo(master_socket);
 
-  // Wait for full cluster information
   receiveNodeInfo(master_socket);
 
   std::cout << "Joined cluster as rank " << local_rank_ << std::endl;
@@ -95,10 +90,7 @@ void ClusterManager::joinCluster(const std::string& master_endpoint) {
 void ClusterManager::exitCluster() {
   shutdown_ = true;
 
-  // Stop listener
   stopListener();
-
-  // Close all connections
   for (auto& [rank, conn] : connections_) {
     if (conn.socket_fd != -1) {
       close(conn.socket_fd);
@@ -125,7 +117,6 @@ bool ClusterManager::addOrUpdateNode(const NodeMeta& node_meta) {
   bool is_new = nodes_.find(node_meta.rank) == nodes_.end();
   nodes_[node_meta.rank] = node_meta;
 
-  // Broadcast update to all other nodes
   if (is_new && node_meta.rank != local_rank_) {
     broadcastNodeUpdate(node_meta);
   }
@@ -151,7 +142,6 @@ std::map<std::string, std::string> ClusterManager::getClusterInfo() {
   info["world_size"] = std::to_string(nodes_.size());
   info["is_master"] = is_master_ ? "true" : "false";
 
-  // Add operator information
   for (const auto& [name, config] : operators_) {
     info["operator_" + name] = config;
   }
@@ -164,7 +154,6 @@ bool ClusterManager::connectToNode(int rank, const std::string& endpoint) {
     return false;
   }
 
-  // Parse endpoint (host:port format)
   size_t colon_pos = endpoint.find(':');
   if (colon_pos == std::string::npos) {
     return false;
@@ -173,17 +162,13 @@ bool ClusterManager::connectToNode(int rank, const std::string& endpoint) {
   std::string host = endpoint.substr(0, colon_pos);
   int port = std::stoi(endpoint.substr(colon_pos + 1));
 
-  // Create socket
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     return false;
   }
 
-  // Set socket options
   int opt = 1;
   setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  // Connect to remote node
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
@@ -201,7 +186,6 @@ bool ClusterManager::connectToNode(int rank, const std::string& endpoint) {
     return false;
   }
 
-  // Store connection info
   ConnectionInfo conn_info(rank, endpoint);
   conn_info.socket_fd = socket_fd;
   conn_info.is_connected = true;
@@ -209,7 +193,6 @@ bool ClusterManager::connectToNode(int rank, const std::string& endpoint) {
 
   std::cout << "Connected to node " << rank << " at " << endpoint << std::endl;
 
-  // Trigger connection callback
   for (const auto& callback : connection_callbacks_) {
     callback(rank);
   }
@@ -229,7 +212,6 @@ void ClusterManager::disconnectFromNode(int rank) {
     it->second.is_connected = false;
     connections_.erase(it);
 
-    // Trigger disconnection callback
     for (const auto& callback : disconnection_callbacks_) {
       callback(rank);
     }
@@ -266,10 +248,9 @@ void ClusterManager::registerDisconnectionCallback(std::function<void(int)> call
   disconnection_callbacks_.push_back(callback);
 }
 
-// Private methods implementation
 void ClusterManager::startListener() {
   if (listener_socket_ != -1) {
-    return; // Already listening
+    return;
   }
 
   listener_socket_ = socket(AF_INET, SOCK_STREAM, 0);
@@ -283,7 +264,7 @@ void ClusterManager::startListener() {
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = 0; // Let OS choose port
+  addr.sin_port = 0;
 
   if (bind(listener_socket_, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
     close(listener_socket_);
@@ -295,17 +276,14 @@ void ClusterManager::startListener() {
     throw std::runtime_error("Failed to listen on socket");
   }
 
-  // Get actual port
   struct sockaddr_in bound_addr;
   socklen_t len = sizeof(bound_addr);
   getsockname(listener_socket_, (struct sockaddr*)&bound_addr, &len);
   int port = ntohs(bound_addr.sin_port);
 
-  // Update local node port
   nodes_[local_rank_].port = port;
   local_endpoint_ = "0.0.0.0:" + std::to_string(port);
 
-  // Start listener thread
   shutdown_ = false;
   listener_thread_ = std::make_unique<std::thread>(&ClusterManager::handleNewConnections, this);
 
@@ -336,7 +314,6 @@ void ClusterManager::handleNewConnections() {
       continue;
     }
 
-    // Get client IP and port
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
     int client_port = ntohs(client_addr.sin_port);
@@ -347,10 +324,8 @@ void ClusterManager::handleNewConnections() {
 }
 
 void ClusterManager::handleNodeConnection(int socket_fd, const std::string& endpoint) {
-  // Receive node info
   receiveNodeInfo(socket_fd);
 
-  // Send cluster info back
   sendNodeInfo(socket_fd);
 
   std::cout << "Node connected from " << endpoint << std::endl;
@@ -360,48 +335,37 @@ void ClusterManager::sendNodeInfo(int socket_fd) {
   std::string node_info = getLocalMeta().serialize();
   uint32_t size = node_info.size();
 
-  // Send size first
   send(socket_fd, &size, sizeof(size), 0);
 
-  // Send data
   send(socket_fd, node_info.c_str(), size, 0);
 }
 
 void ClusterManager::receiveNodeInfo(int socket_fd) {
-  // Receive size
   uint32_t size = 0;
   recv(socket_fd, &size, sizeof(size), 0);
 
-  // Receive data
   std::vector<char> buffer(size + 1);
   recv(socket_fd, buffer.data(), size, 0);
   buffer[size] = '\0';
 
-  // Parse node info
   NodeMeta node = NodeMeta::deserialize(std::string(buffer.data()));
 
-  // Add node to cluster
   addOrUpdateNode(node);
 }
 
 std::string ClusterManager::generateEndpoint() {
-  return "127.0.0.1:0"; // Will be replaced by actual bound port
+  return "127.0.0.1:0";
 }
 
 bool ClusterManager::validateEndpoint(const std::string& endpoint) {
-  // Basic validation: host:port format
   size_t colon_pos = endpoint.find(':');
   if (colon_pos == std::string::npos || colon_pos == endpoint.length() - 1) {
     return false;
   }
 
   std::string port_str = endpoint.substr(colon_pos + 1);
-  try {
-    int port = std::stoi(port_str);
-    return port > 0 && port <= 65535;
-  } catch (...) {
-    return false;
-  }
+  int port = std::stoi(port_str);
+  return port > 0 && port <= 65535;
 }
 
 void ClusterManager::broadcastNodeUpdate(const NodeMeta& node) {

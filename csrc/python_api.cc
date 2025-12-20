@@ -10,6 +10,7 @@
 #include <topology/topology.h>
 #include <cluster/process_group.h>
 #include <algorithms/algorithm_manager.h>
+#include <ir_executor.h>
 
 namespace py = pybind11;
 
@@ -101,6 +102,68 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         at::Tensor input_tensor = at::from_blob(input_buf.ptr, input_buf.shape, at::kFloat);
         at::Tensor output_tensor = at::from_blob(output_buf.ptr, output_buf.shape, at::kFloat);
         self.exeOp(name, input_tensor, output_tensor);
+    })
+    .def("executeIRGraph", [](Engine& self, const std::string& json_graph, int device_id, const std::string& device_type) {
+        pccl::IRGraphExecutor executor;
+        pccl::ExecutionContext context;
+        context.device_id = device_id;
+        context.device_type = device_type;
+
+        if (!executor.parseIRGraph(json_graph)) {
+            throw std::runtime_error("Failed to parse IR graph: " + executor.getLastError());
+        }
+
+        if (!executor.executeGraph(context)) {
+            throw std::runtime_error("Failed to execute IR graph: " + executor.getLastError());
+        }
+
+        return executor.getStatistics();
+    })
+    .def("executeIRGraphWithTensors", [](Engine& self, const std::string& json_graph,
+                                               const std::map<std::string, py::array_t<float>>& input_tensors,
+                                               int device_id, const std::string& device_type) {
+        pccl::IRGraphExecutor executor;
+        pccl::ExecutionContext context;
+        context.device_id = device_id;
+        context.device_type = device_type;
+
+        // Convert Python tensors to C++ Value objects
+        for (const auto& [tensor_id, py_tensor] : input_tensors) {
+            auto buffer = py_tensor.request();
+
+            // Create C++ Value object (this is a simplified implementation)
+            auto value = std::make_shared<Value>(
+                DataType::FLOAT32,
+                std::vector<int>(buffer.shape.begin(), buffer.shape.end()),
+                device_id
+            );
+
+            context.inputs[tensor_id] = value;
+        }
+
+        if (!executor.parseIRGraph(json_graph)) {
+            throw std::runtime_error("Failed to parse IR graph: " + executor.getLastError());
+        }
+
+        if (!executor.executeGraph(context)) {
+            throw std::runtime_error("Failed to execute IR graph: " + executor.getLastError());
+        }
+
+        return executor.getStatistics();
+    })
+    .def("allocateTensor", [](Engine& self, const std::vector<int>& shape, const std::string& dtype,
+                                 int device_id) {
+        DataType data_type = DataType::FLOAT32;
+        if (dtype == "float64") {
+            data_type = DataType::FLOAT64;
+        } else if (dtype == "int32") {
+            data_type = DataType::INT32;
+        } else if (dtype == "int64") {
+            data_type = DataType::INT64;
+        }
+
+        auto tensor = std::make_shared<Value>(data_type, shape, device_id);
+        return tensor;
     })
     .def("exportEndpoint", &Engine::exportEndpoint)
     .def("joinCluster", &Engine::joinCluster)
@@ -194,6 +257,33 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     .def_static("buildMeshTopology", &TopologyBuilder::buildMeshTopology)
     .def_static("buildHierarchicalTopology", &TopologyBuilder::buildHierarchicalTopology)
     .def_static("buildFullyConnectedTopology", &TopologyBuilder::buildFullyConnectedTopology);
+
+  py::class_<pccl::ExecutionContext>(m, "ExecutionContext")
+    .def(py::init<>())
+    .def_readwrite("device_id", &pccl::ExecutionContext::device_id)
+    .def_readwrite("device_type", &pccl::ExecutionContext::device_type)
+    .def_readwrite("async_execution", &pccl::ExecutionContext::async_execution)
+    .def_readwrite("timeout_ms", &pccl::ExecutionContext::timeout_ms);
+
+  py::class_<pccl::ExecutionStats>(m, "ExecutionStats")
+    .def(py::init<>())
+    .def_readonly("num_operations", &pccl::ExecutionStats::num_operations)
+    .def_readonly("num_values", &pccl::ExecutionStats::num_values)
+    .def_readonly("execution_time_ms", &pccl::ExecutionStats::execution_time_ms)
+    .def_readonly("operation_counts", &pccl::ExecutionStats::operation_counts)
+    .def_readonly("operation_times", &pccl::ExecutionStats::operation_times)
+    .def_readonly("success", &pccl::ExecutionStats::success)
+    .def_readonly("error_message", &pccl::ExecutionStats::error_message);
+
+  py::class_<pccl::IRGraphExecutor>(m, "IRGraphExecutor")
+    .def(py::init<>())
+    .def("parseIRGraph", &pccl::IRGraphExecutor::parseIRGraph)
+    .def("executeGraph", &pccl::IRGraphExecutor::executeGraph)
+    .def("executeGraphAsync", &pccl::IRGraphExecutor::executeGraphAsync)
+    .def("getStatistics", &pccl::IRGraphExecutor::getStatistics)
+    .def("reset", &pccl::IRGraphExecutor::reset)
+    .def("isReady", &pccl::IRGraphExecutor::isReady)
+    .def("getLastError", &pccl::IRGraphExecutor::getLastError);
 
   py::class_<TopologyManager>(m, "TopologyManager")
     .def(py::init<>())

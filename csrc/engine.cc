@@ -54,7 +54,6 @@ void Engine::initEngine() {
     auto device_name = TypeRegistry::getTypeName(device);
     
     if (getDev(device)->remoteCommAvailable()) {
-      // Todo
       std::string handle = getDev(device)->activate();
 
       configs[fmt::format("remote.{}.available", device_name)] = "true";
@@ -100,79 +99,57 @@ void Engine::initEngine() {
 }
 
 void Engine::regOp(const std::string &name, const std::string &filepath) {
-  try {
-    // Register operator with the operator manager
-    operators_->registerOperator(name, filepath);
+  operators_->registerOperator(name, filepath);
 
-    // Load and parse operator configuration from file
-    std::string config_content = readFileToString(filepath);
+  std::string config_content = readFileToString(filepath);
 
-    // Create operator instance and configure it
-    auto op = operators_->createOperator(name);
-    if (op) {
-      // Configure operator with loaded configuration
-      op->configure(config_content);
+  auto op = operators_->createOperator(name);
+  if (op) {
+    op->configure(config_content);
 
-      // Register operator with cluster for distributed execution
-      if (cluster_) {
-        cluster_->registerOperator(name, config_content);
-      }
+    if (cluster_) {
+      cluster_->registerOperator(name, config_content);
     }
-  } catch (const std::exception& e) {
-    throw std::runtime_error("Failed to register operator '" + name + "': " + e.what());
   }
 }
 
 void Engine::exeOp(const std::string &name, at::Tensor &input, at::Tensor output) {
-  try {
-    // Validate input tensor
-    if (!input.defined()) {
-      throw std::runtime_error("Input tensor is not defined");
-    }
+  if (!input.defined()) {
+    throw std::runtime_error("Input tensor is not defined");
+  }
 
-    // Create output tensor if not defined
-    if (!output.defined()) {
-      output = at::empty_like(input);
-    }
+  if (!output.defined()) {
+    output = at::empty_like(input);
+  }
 
-    // Get operator instance
-    auto op = operators_->getOperator(name);
-    if (!op) {
-      throw std::runtime_error("Operator '" + name + "' not found. Make sure to register it first.");
-    }
+  auto op = operators_->getOperator(name);
+  if (!op) {
+    throw std::runtime_error("Operator '" + name + "' not found. Make sure to register it first.");
+  }
 
-    // Create execution context
-    ExecutionContext context;
-    context.rank = rank_;
-    context.world_size = world_size_;
-    context.cluster = cluster_.get();
-    context.buffers = buffers_.get();
+  ExecutionContext context;
+  context.rank = rank_;
+  context.world_size = world_size_;
+  context.cluster = cluster_.get();
+  context.buffers = buffers_.get();
 
-    // Create input chunk
-    auto input_chunk = std::make_shared<Chunk>(
-      input.data_ptr(),
-      input.numel() * input.element_size(),
-      input.device().index()
-    );
+  auto input_chunk = std::make_shared<Chunk>(
+    input.data_ptr(),
+    input.numel() * input.element_size(),
+    input.device().index()
+  );
 
-    // Create output chunk
-    auto output_chunk = std::make_shared<Chunk>(
-      output.data_ptr(),
-      output.numel() * output.element_size(),
-      output.device().index()
-    );
+  auto output_chunk = std::make_shared<Chunk>(
+    output.data_ptr(),
+    output.numel() * output.element_size(),
+    output.device().index()
+  );
 
-    // Execute the operator
-    auto result_chunk = op->execute(input_chunk, context);
+  auto result_chunk = op->execute(input_chunk, context);
 
-    // Copy result to output tensor if needed
-    if (result_chunk && result_chunk->data() != output.data_ptr()) {
-      std::memcpy(output.data_ptr(), result_chunk->data(),
-                  std::min(output.numel() * output.element_size(), result_chunk->size()));
-    }
-
-  } catch (const std::exception& e) {
-    throw std::runtime_error("Failed to execute operator '" + name + "': " + e.what());
+  if (result_chunk && result_chunk->data() != output.data_ptr()) {
+    std::memcpy(output.data_ptr(), result_chunk->data(),
+                std::min(output.numel() * output.element_size(), result_chunk->size()));
   }
 }
 
@@ -181,11 +158,7 @@ std::string Engine::exportEndpoint() {
     throw std::runtime_error("Cluster manager not initialized. Call initEngine() first.");
   }
 
-  try {
-    return cluster_->exportEndpoint();
-  } catch (const std::exception& e) {
-    throw std::runtime_error("Failed to export endpoint: " + e.what());
-  }
+  return cluster_->exportEndpoint();
 }
 
 void Engine::joinCluster(const std::string &master_endpoint) {
@@ -193,25 +166,14 @@ void Engine::joinCluster(const std::string &master_endpoint) {
     throw std::runtime_error("Cluster manager not initialized. Call initEngine() first.");
   }
 
-  try {
-    cluster_->joinCluster(master_endpoint);
+  cluster_->joinCluster(master_endpoint);
 
-    // Update operator registry with cluster information
-    operators_->setClusterInfo(cluster_->getClusterInfo());
-
-  } catch (const std::exception& e) {
-    throw std::runtime_error("Failed to join cluster: " + e.what());
-  }
+  operators_->setClusterInfo(cluster_->getClusterInfo());
 }
 
 void Engine::exitCluster() {
   if (cluster_) {
-    try {
-      cluster_->exitCluster();
-    } catch (const std::exception& e) {
-      // Log error but don't throw to allow graceful shutdown
-      std::cerr << "Warning: Error exiting cluster: " << e.what() << std::endl;
-    }
+    cluster_->exitCluster();
   }
 }
 

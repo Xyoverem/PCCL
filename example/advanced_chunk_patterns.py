@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Advanced Chunk Communication Patterns
 Demonstrates sophisticated chunk-level routing and optimization
@@ -14,10 +13,10 @@ from pccl.lang.operator import Device
 
 @communication
 class CollectiveOptimizedChunkPatterns:
-    """Collective operations with fine-grained chunk optimization"""
+    
 
     def optimized_allreduce(self, tensor, participants):
-        """AllReduce with different strategies for different chunk sizes"""
+        
         chunk_configs = [
             (32, "tree"),      # Small chunks: tree reduction
             (128, "ring"),     # Medium chunks: ring allreduce
@@ -57,7 +56,7 @@ class CollectiveOptimizedChunkPatterns:
         return torch.cat(results).reshape(tensor.shape)
 
     def _tree_reduce_chunk(self, chunk, participants):
-        """Tree-based reduction for small chunks"""
+        
         fanout = 2
         level = 0
 
@@ -71,7 +70,6 @@ class CollectiveOptimizedChunkPatterns:
                 group = current_participants[i:i+fanout]
 
                 if self.rank == group[0]:
-                    # Root of this group: receive from children
                     for child_rank in group[1:]:
                         recv_op = recv(
                             source=child_rank,
@@ -83,7 +81,6 @@ class CollectiveOptimizedChunkPatterns:
                         reduced_chunk += child_chunk
                     next_level.append(group[0])
                 elif self.rank in group[1:]:
-                    # Child: send to parent
                     parent_rank = group[0]
                     send_op = send(
                         destination=parent_rank,
@@ -95,8 +92,6 @@ class CollectiveOptimizedChunkPatterns:
 
             current_participants = next_level
             level += 1
-
-        # Broadcast result back to all participants
         if self.rank == participants[0]:
             for rank in participants[1:]:
                 send_op = send(
@@ -117,25 +112,20 @@ class CollectiveOptimizedChunkPatterns:
         return reduced_chunk
 
     def _hierarchical_reduce_chunk(self, chunk, participants):
-        """Hierarchical reduction for large chunks"""
-        # Assume 2-level hierarchy: intra-node + inter-node
+        
         ranks_per_node = 2
         my_node = self.rank // ranks_per_node
         local_rank = self.rank % ranks_per_node
 
-        # Phase 1: Intra-node reduction
         local_participants = [my_node * ranks_per_node + i for i in range(ranks_per_node)
                              if my_node * ranks_per_node + i in participants]
 
         if len(local_participants) > 1:
             chunk = self._tree_reduce_chunk(chunk, local_participants)
 
-        # Phase 2: Inter-node reduction (only local leaders)
         local_leaders = [p for p in participants if p % ranks_per_node == 0]
         if self.rank in local_leaders and len(local_leaders) > 1:
             chunk = self._tree_reduce_chunk(chunk, local_leaders)
-
-        # Phase 3: Broadcast within nodes
         if self.rank in local_leaders:
             for rank in local_participants:
                 if rank != self.rank:
@@ -157,9 +147,8 @@ class CollectiveOptimizedChunkPatterns:
         return chunk
 
     def _direct_reduce_chunk(self, chunk, participants):
-        """Direct reduction for very large chunks"""
+        
         if self.rank == participants[0]:
-            # Root receives from all others and reduces
             reduced_chunk = chunk.clone()
             for rank in participants[1:]:
                 recv_op = recv(
@@ -171,7 +160,6 @@ class CollectiveOptimizedChunkPatterns:
                 received_chunk = recv_op.execute()
                 reduced_chunk += received_chunk
 
-            # Send result back to all
             for rank in participants[1:]:
                 send_op = send(
                     destination=rank,
@@ -182,7 +170,6 @@ class CollectiveOptimizedChunkPatterns:
 
             return reduced_chunk
         else:
-            # Send to root and receive result
             send_op = send(
                 destination=participants[0],
                 tag=f"direct_reduce_{self.rank}",
@@ -200,25 +187,23 @@ class CollectiveOptimizedChunkPatterns:
 
 @communication
 class ChunkRoutingStrategies:
-    """Different routing strategies for chunks based on network topology"""
+    
 
     def topology_aware_routing(self, tensor, participants, topology_info=None):
-        """Route chunks based on network topology"""
+        
         chunk_size = 256
         chunks = self._split_tensor(tensor, chunk_size)
 
         if topology_info is None:
-            # Simulate topology information
             topology_info = {
                 'bandwidth_matrix': self._generate_bandwidth_matrix(len(participants)),
                 'latency_matrix': self._generate_latency_matrix(len(participants)),
-                'node_mapping': {i: i // 2 for i in participants}  # 2 ranks per node
+                'node_mapping': {i: i // 2 for i in participants}
             }
 
         results = []
 
         for chunk_idx, chunk in enumerate(chunks):
-            # Choose routing strategy based on chunk size and topology
             route = self._select_optimal_route(
                 self.rank, participants, chunk_idx, topology_info
             )
@@ -229,7 +214,7 @@ class ChunkRoutingStrategies:
         return torch.cat(results).reshape(tensor.shape)
 
     def _select_optimal_route(self, source_rank, participants, chunk_idx, topology_info):
-        """Select optimal route for a chunk"""
+        
         chunk_size = 128 + chunk_idx * 64  # Varying chunk sizes
 
         if chunk_size < 1024:  # Small chunks: minimize latency
@@ -238,18 +223,15 @@ class ChunkRoutingStrategies:
             return self._maximize_bandwidth_route(source_rank, participants, topology_info)
 
     def _minimize_latency_route(self, source_rank, participants, topology_info):
-        """Find route with minimum latency"""
+        
         latencies = topology_info['latency_matrix']
         node_mapping = topology_info['node_mapping']
 
         my_node = node_mapping[source_rank]
 
-        # Prefer same-node communication
         for rank in participants:
             if rank != source_rank and node_mapping[rank] == my_node:
                 return [source_rank, rank]
-
-        # Otherwise, find lowest latency path
         min_latency = float('inf')
         best_route = [source_rank]
 
@@ -262,7 +244,7 @@ class ChunkRoutingStrategies:
         return best_route
 
     def _maximize_bandwidth_route(self, source_rank, participants, topology_info):
-        """Find route with maximum bandwidth"""
+        
         bandwidths = topology_info['bandwidth_matrix']
 
         max_bandwidth = 0
@@ -277,7 +259,7 @@ class ChunkRoutingStrategies:
         return best_route
 
     def _execute_routed_communication(self, chunk, route, topology_info):
-        """Execute communication along specified route"""
+        
         current_chunk = chunk.clone()
 
         for i in range(len(route) - 1):
@@ -285,7 +267,6 @@ class ChunkRoutingStrategies:
             next_rank = route[i + 1]
 
             if self.rank == current_rank:
-                # Send to next hop
                 send_op = send(
                     destination=next_rank,
                     tag=f"route_{id(chunk)}_{i}",
@@ -294,7 +275,6 @@ class ChunkRoutingStrategies:
                 send_op.execute(current_chunk)
                 break
             elif self.rank == next_rank:
-                # Receive from previous hop
                 recv_op = recv(
                     source=current_rank,
                     tag=f"route_{id(chunk)}_{i}",
@@ -306,7 +286,7 @@ class ChunkRoutingStrategies:
         return current_chunk
 
     def _generate_bandwidth_matrix(self, size):
-        """Generate sample bandwidth matrix (GB/s)"""
+        
         matrix = np.zeros((size, size))
         for i in range(size):
             for j in range(size):
@@ -319,7 +299,7 @@ class ChunkRoutingStrategies:
         return matrix
 
     def _generate_latency_matrix(self, size):
-        """Generate sample latency matrix (microseconds)"""
+        
         matrix = np.zeros((size, size))
         for i in range(size):
             for j in range(size):
@@ -333,10 +313,10 @@ class ChunkRoutingStrategies:
 
 @communication
 class ChunkStreamingPatterns:
-    """Streaming patterns for continuous data flow"""
+    
 
     def streaming_allreduce(self, tensor_stream, participants, buffer_size=4):
-        """Streaming allreduce for continuous data streams"""
+        
         results = []
         buffer = []
 
@@ -344,13 +324,10 @@ class ChunkStreamingPatterns:
             buffer.append(tensor)
 
             if len(buffer) == buffer_size:
-                # Process buffered chunks
                 buffered_tensor = torch.cat(buffer)
                 reduced = self._process_buffer(buffered_tensor, participants)
                 results.extend(torch.split(reduced, [t.numel() for t in buffer]))
                 buffer.clear()
-
-        # Process remaining chunks
         if buffer:
             buffered_tensor = torch.cat(buffer)
             reduced = self._process_buffer(buffered_tensor, participants)
@@ -359,7 +336,7 @@ class ChunkStreamingPatterns:
         return results
 
     def _process_buffer(self, buffered_tensor, participants):
-        """Process buffered tensor with optimal algorithm"""
+        
         size = buffered_tensor.numel()
 
         if size < 1024:
@@ -378,14 +355,12 @@ class ChunkStreamingPatterns:
 
 @communication
 class AdaptiveChunkSizing:
-    """Adaptively size chunks based on network conditions"""
+    
 
     def adaptive_chunk_allreduce(self, tensor, participants):
-        """AllReduce with adaptive chunk sizing"""
-        # Simulate network condition monitoring
+        
         network_conditions = self._monitor_network_conditions()
 
-        # Determine optimal chunk sizes
         chunk_sizes = self._compute_optimal_chunk_sizes(tensor, network_conditions)
 
         results = []
@@ -398,7 +373,6 @@ class AdaptiveChunkSizing:
             actual_chunk_size = min(chunk_size, tensor.numel() - offset)
             chunk = tensor.flatten()[offset:offset + actual_chunk_size]
 
-            # Choose algorithm based on chunk size and conditions
             algorithm = self._select_algorithm(chunk_size, network_conditions)
 
             allreduce_op = allreduce(
@@ -414,7 +388,7 @@ class AdaptiveChunkSizing:
         return torch.cat(results).reshape(tensor.shape)
 
     def _monitor_network_conditions(self):
-        """Simulate network condition monitoring"""
+        
         return {
             'bandwidth': 10.0,  # GB/s
             'latency': 50.0,    # microseconds
@@ -423,44 +397,38 @@ class AdaptiveChunkSizing:
         }
 
     def _compute_optimal_chunk_sizes(self, tensor, conditions):
-        """Compute optimal chunk sizes based on network conditions"""
+        
         bandwidth = conditions['available_bandwidth']
         latency = conditions['latency']
 
-        # Base chunk size calculation
-        # Larger chunks for high bandwidth, smaller for high latency
-        if bandwidth > 50:  # Very high bandwidth
+        if bandwidth > 50:
             base_size = 2048
-        elif bandwidth > 10:  # High bandwidth
+        elif bandwidth > 10:
             base_size = 1024
-        elif bandwidth > 1:   # Medium bandwidth
+        elif bandwidth > 1:
             base_size = 512
-        else:                 # Low bandwidth
+        else:
             base_size = 256
 
-        # Adjust for latency
-        if latency > 100:  # High latency
+        if latency > 100:
             base_size = min(base_size, 128)
-        elif latency > 50:  # Medium latency
+        elif latency > 50:
             base_size = min(base_size, 256)
 
-        # Adjust for congestion
         congestion_factor = 1.0 - conditions['congestion'] * 0.5
         base_size = int(base_size * congestion_factor)
 
-        # Generate variety of chunk sizes around base
         chunk_sizes = []
         num_chunks = max(1, tensor.numel() // base_size)
 
         for i in range(num_chunks):
-            # Vary chunk sizes by ±25%
             variation = 0.75 + (i % 5) * 0.125
             chunk_sizes.append(int(base_size * variation))
 
         return chunk_sizes
 
     def _select_algorithm(self, chunk_size, conditions):
-        """Select optimal algorithm for chunk size and conditions"""
+        
         congestion = conditions['congestion']
         bandwidth = conditions['bandwidth']
 
@@ -472,7 +440,7 @@ class AdaptiveChunkSizing:
             return "ring"  # Normal conditions: ring allreduce
 
 def demonstrate_advanced_patterns():
-    """Demonstrate all advanced chunk patterns"""
+    
     print("=== Advanced Chunk Communication Patterns ===\n")
 
     devices = [Device(rank=i, device_type="cuda") for i in range(4)]
@@ -529,7 +497,7 @@ def demonstrate_advanced_patterns():
         print(f"✗ Adaptive chunk AllReduce failed: {e}")
 
 def demonstrate_chunk_manager_usage():
-    """Demonstrate ChunkManager usage for complex scenarios"""
+    
     print("\n\n=== ChunkManager Advanced Usage ===\n")
 
     devices = [Device(rank=i, device_type="cuda") for i in range(4)]
@@ -538,28 +506,21 @@ def demonstrate_chunk_manager_usage():
     print("1. Multiple Communication Groups")
     print("-" * 35)
 
-    # Create multiple communication groups
     collective_group = manager.create_group("collective")
     point_to_point_group = manager.create_group("p2p")
     broadcast_group = manager.create_group("broadcast")
 
-    # Set up operations in different groups
     tensor = torch.randn(1024, device="cuda")
 
-    # Collective operations
     chunks = collective_group.create_chunks(tensor, 256, ["c0", "c1", "c2", "c3"])
     collective_group.reduce_chunks(["c0", "c1", "c2", "c3"], [0, 1, 2, 3])
 
-    # Point-to-point operations
     p2p_chunks = point_to_point_group.create_chunks(tensor, 512, ["p0", "p1"])
     point_to_point_group.send_chunk("p0", 0, 1, tag=100)
     point_to_point_group.recv_chunk("p0", 0, 1, (512,), torch.float32, tag=100)
 
-    # Broadcast operations
     bcast_chunks = broadcast_group.create_chunks(tensor, 1024, ["b0"])
     broadcast_group.broadcast_chunk("b0", 0, [0, 1, 2, 3])
-
-    # Execute all groups
     try:
         results = manager.execute_all_groups()
         print(f"✓ Multiple groups executed successfully")
@@ -571,7 +532,6 @@ def demonstrate_chunk_manager_usage():
     print("\n2. Performance Metrics Analysis")
     print("-" * 35)
 
-    # Get performance metrics from each group
     for group_name in ["collective", "p2p", "broadcast"]:
         group = manager.get_group(group_name)
         if group:
@@ -586,28 +546,15 @@ def demonstrate_chunk_manager_usage():
     pipeline_group = manager.create_group("pipeline")
     tensor = torch.randn(2048, device="cuda")
 
-    # Create chunk pipeline
     chunks = pipeline_group.create_chunks(tensor, 256)
 
-    # Stage-dependent operations
     for i, chunk_id in enumerate(pipeline_group.list_chunks()):
-        # Send to next stage
         dest_rank = (i + 1) % 4
         pipeline_group.send_chunk(chunk_id, 0, dest_rank, tag=i*10)
 
-        # Create dependency for next operation
         if i > 0:
             prev_chunk_id = pipeline_group.list_chunks()[i-1]
             pipeline_group.reduce_chunks([prev_chunk_id, chunk_id], [0, dest_rank])
-
-    try:
-        pipeline_results = pipeline_group.execute()
-        print(f"✓ Chunk pipeline completed")
-        print(f"  Processed {len(pipeline_results)} chunks with dependencies")
-    except Exception as e:
-        print(f"✗ Chunk pipeline failed: {e}")
-
-    # Cleanup
     manager.clear_all_groups()
     print("\n✓ All groups cleared")
 

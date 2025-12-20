@@ -1,0 +1,344 @@
+{
+  "ir_type": "primitive",
+  "values": {
+    "input_tensor_prim": {
+      "id": "input_tensor_prim",
+      "dtype": "float32",
+      "shape": [
+        1024
+      ],
+      "device_id": 0,
+      "device_type": "cuda",
+      "metadata": {}
+    }
+  },
+  "operations": {
+    "scatter_signal_0": {
+      "id": "scatter_signal_0",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "scatter_sig_0"
+      ],
+      "attributes": {
+        "signal_id": "scatter_sig_0",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "scatter_wait_0": {
+      "id": "scatter_wait_0",
+      "op_type": "wait_signal",
+      "inputs": [
+        "scatter_sig_0"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "scatter_sig_0",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "reduce_scatter_0": {
+      "id": "reduce_scatter_0",
+      "op_type": "reduce",
+      "inputs": [
+        "input_tensor_prim",
+        "received_scatter_0"
+      ],
+      "outputs": [
+        "reduced_scatter_0"
+      ],
+      "attributes": {
+        "reduce_op": "sum",
+        "device_id": 0,
+        "device_type": "cpu",
+        "num_inputs": 2
+      },
+      "metadata": {}
+    },
+    "scatter_signal_1": {
+      "id": "scatter_signal_1",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "scatter_sig_1"
+      ],
+      "attributes": {
+        "signal_id": "scatter_sig_1",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "scatter_wait_1": {
+      "id": "scatter_wait_1",
+      "op_type": "wait_signal",
+      "inputs": [
+        "scatter_sig_1"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "scatter_sig_1",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "reduce_scatter_1": {
+      "id": "reduce_scatter_1",
+      "op_type": "reduce",
+      "inputs": [
+        "reduced_scatter_0",
+        "received_scatter_1"
+      ],
+      "outputs": [
+        "reduced_scatter_1"
+      ],
+      "attributes": {
+        "reduce_op": "sum",
+        "device_id": 0,
+        "device_type": "cpu",
+        "num_inputs": 2
+      },
+      "metadata": {}
+    },
+    "scatter_signal_2": {
+      "id": "scatter_signal_2",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "scatter_sig_2"
+      ],
+      "attributes": {
+        "signal_id": "scatter_sig_2",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "scatter_wait_2": {
+      "id": "scatter_wait_2",
+      "op_type": "wait_signal",
+      "inputs": [
+        "scatter_sig_2"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "scatter_sig_2",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "reduce_scatter_2": {
+      "id": "reduce_scatter_2",
+      "op_type": "reduce",
+      "inputs": [
+        "reduced_scatter_1",
+        "received_scatter_2"
+      ],
+      "outputs": [
+        "reduced_scatter_2"
+      ],
+      "attributes": {
+        "reduce_op": "sum",
+        "device_id": 0,
+        "device_type": "cpu",
+        "num_inputs": 2
+      },
+      "metadata": {}
+    },
+    "gather_signal_0": {
+      "id": "gather_signal_0",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "gather_sig_0"
+      ],
+      "attributes": {
+        "signal_id": "gather_sig_0",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "gather_wait_0": {
+      "id": "gather_wait_0",
+      "op_type": "wait_signal",
+      "inputs": [
+        "gather_sig_0"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "gather_sig_0",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "copy_gather_0": {
+      "id": "copy_gather_0",
+      "op_type": "copy",
+      "inputs": [
+        "received_gather_0"
+      ],
+      "outputs": [
+        "output_tensor"
+      ],
+      "attributes": {
+        "src_device_id": 0,
+        "dst_device_id": 0,
+        "src_device_type": "cpu",
+        "dst_device_type": "cpu",
+        "cross_device": false
+      },
+      "metadata": {}
+    },
+    "gather_signal_1": {
+      "id": "gather_signal_1",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "gather_sig_1"
+      ],
+      "attributes": {
+        "signal_id": "gather_sig_1",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "gather_wait_1": {
+      "id": "gather_wait_1",
+      "op_type": "wait_signal",
+      "inputs": [
+        "gather_sig_1"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "gather_sig_1",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "copy_gather_1": {
+      "id": "copy_gather_1",
+      "op_type": "copy",
+      "inputs": [
+        "received_gather_1"
+      ],
+      "outputs": [
+        "output_tensor"
+      ],
+      "attributes": {
+        "src_device_id": 0,
+        "dst_device_id": 0,
+        "src_device_type": "cpu",
+        "dst_device_type": "cpu",
+        "cross_device": false
+      },
+      "metadata": {}
+    },
+    "gather_signal_2": {
+      "id": "gather_signal_2",
+      "op_type": "signal",
+      "inputs": [],
+      "outputs": [
+        "gather_sig_2"
+      ],
+      "attributes": {
+        "signal_id": "gather_sig_2",
+        "target_ranks": [
+          1
+        ],
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "gather_wait_2": {
+      "id": "gather_wait_2",
+      "op_type": "wait_signal",
+      "inputs": [
+        "gather_sig_2"
+      ],
+      "outputs": [],
+      "attributes": {
+        "signal_id": "gather_sig_2",
+        "source_ranks": [
+          3
+        ],
+        "timeout_ms": null,
+        "device_id": 0,
+        "device_type": "cpu"
+      },
+      "metadata": {}
+    },
+    "copy_gather_2": {
+      "id": "copy_gather_2",
+      "op_type": "copy",
+      "inputs": [
+        "received_gather_2"
+      ],
+      "outputs": [
+        "output_tensor"
+      ],
+      "attributes": {
+        "src_device_id": 0,
+        "dst_device_id": 0,
+        "src_device_type": "cpu",
+        "dst_device_type": "cpu",
+        "cross_device": false
+      },
+      "metadata": {}
+    }
+  },
+  "metadata": {
+    "created_at": "2025-12-20T04:04:18.678201",
+    "graph_id": "allreduce_demo",
+    "lowering_info": {
+      "pass": "collective_to_primitive",
+      "target_device": "cuda",
+      "optimization_level": "default"
+    }
+  }
+}

@@ -74,6 +74,13 @@ from .rocm import (
     benchmark_allreduce as rocm_benchmark_allreduce
 )
 
+from .hardware_primitives import (
+    HardwarePrimitiveRegistry,
+    register_lowering_pass,
+    get_hardware_primitives_for_device,
+    create_lowering_pass_for_device
+)
+
 __all__ = [
     "CpuDevice",
     "CpuExecutor",
@@ -138,5 +145,9 @@ __all__ = [
     "create_rocm_memory_pool",
     "rocm_is_available",
     "get_device_summary",
-    "rocm_benchmark_allreduce"
+    "rocm_benchmark_allreduce",
+    "HardwarePrimitiveRegistry",
+    "register_lowering_pass",
+    "get_hardware_primitives_for_device",
+    "create_lowering_pass_for_device"
 ]

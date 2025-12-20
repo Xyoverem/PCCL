@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 PCCL Plugins Demo
 Demonstrates usage of all available plugins (CPU, CUDA, RDMA, ROCm)
@@ -25,19 +24,16 @@ def demo_cpu_plugin():
     total_mem, available_mem = get_cpu_memory_info()
     print(f"CPU Memory: {available_mem / (1024**3):.2f} GB available / {total_mem / (1024**3):.2f} GB total")
 
-    # CPU Device and Executor
     cpu_device = create_cpu_device()
     cpu_executor = create_cpu_executor()
 
     if cpu_device.available:
         print("CPU device is available")
 
-        # Memory allocation test
         size = 1024 * 1024
         tensor = cpu_device.allocate(size)
         print(f"Allocated {size} bytes on CPU")
 
-        # Memory manager test
         memory_manager = create_cpu_memory_manager()
         allocated = memory_manager.get_allocated_bytes()
         print(f"Memory manager allocated: {allocated} bytes")
@@ -47,11 +43,9 @@ def demo_cpu_plugin():
 
         memory_manager.clear()
 
-    # Thread pool test
     thread_pool = create_cpu_thread_pool(4)
     print(f"Thread pool threads: {thread_pool.get_thread_count()}")
 
-    # Performance benchmark
     copy_time = cpu_benchmark_copy(1024 * 1024, 10)
     print(f"CPU copy benchmark (1MB): {copy_time:.4f} ms")
 
@@ -81,7 +75,6 @@ def demo_cuda_plugin():
         free_mem, total_mem = get_cuda_memory_info(device_id)
         print(f"  Memory Usage: {free_mem / (1024**3):.2f} GB free / {total_mem / (1024**3):.2f} GB total")
 
-        # P2P test
         if device_count > 1:
             for other_id in range(device_count):
                 if other_id != device_id:
@@ -91,8 +84,6 @@ def demo_cuda_plugin():
                     if can_access:
                         cuda_enable_peer_access(device_id, other_id)
                         print(f"  Enabled P2P to device {other_id}")
-
-    # CUDA executor test
     if device_count > 0:
         cuda_device = create_cuda_device(0)
         cuda_executor = create_cuda_executor(0)
@@ -104,7 +95,6 @@ def demo_cuda_plugin():
             print(f"Tensor shape: {tensor.shape}, device: {tensor.device}")
             cuda_device.deallocate(tensor)
 
-        # Performance benchmarks
         copy_time = cuda_benchmark_copy(1024 * 1024, 100)
         print(f"CUDA copy benchmark (1MB): {copy_time:.4f} ms")
 
@@ -128,14 +118,11 @@ def demo_rocm_plugin():
         free_mem, total_mem = get_rocm_memory_info(device_id)
         print(f"  Memory Usage: {free_mem / (1024**3):.2f} GB free / {total_mem / (1024**3):.2f} GB total")
 
-        # P2P test
         if device_count > 1:
             for other_id in range(device_count):
                 if other_id != device_id:
                     can_access = rocm_can_access_peer(device_id, other_id)
                     print(f"  Can access peer {other_id}: {can_access}")
-
-    # ROCm executor test
     if device_count > 0:
         rocm_device = create_rocm_device(0)
         rocm_executor = create_rocm_executor(0)
@@ -146,7 +133,6 @@ def demo_rocm_plugin():
             print(f"\nAllocated {size} bytes on ROCm device 0")
             rocm_device.deallocate(tensor)
 
-        # Performance benchmarks
         allreduce_time = rocm_benchmark_allreduce(1024 * 1024, 10)
         print(f"ROCm AllReduce benchmark (1MB): {allreduce_time:.4f} ms")
 
@@ -173,14 +159,12 @@ def demo_rdma_plugin():
         device_list = get_device_list()
         print(f"Found {len(device_list)} RDMA devices")
 
-        # RDMA connection manager test
         conn_manager = create_rdma_connection_manager()
         local_info = conn_manager.create_connection()
         if local_info:
             print("Created local RDMA connection info")
             print(f"Connection info length: {len(local_info)} bytes")
 
-        # Memory manager test
         mem_manager = create_rdma_memory_manager()
         buffer = mem_manager.allocate(1024 * 1024)
         if buffer is not None:
@@ -191,8 +175,6 @@ def demo_rdma_plugin():
                 print("Registered RDMA buffer")
 
             mem_manager.free(buffer)
-
-        # Performance benchmarks
         latency = benchmark_rdma_latency(1024, 100)
         print(f"RDMA latency benchmark (1KB): {latency:.2f} μs")
 
@@ -202,7 +184,6 @@ def demo_rdma_plugin():
 def demo_communication_patterns():
     print_separator("Communication Patterns with Different Plugins")
 
-    # Test different AllReduce implementations
     algorithms = ["ring", "tree", "rabenseifner"]
     size = 1024 * 1024
 
@@ -222,7 +203,6 @@ def demo_communication_patterns():
                 print(f"  CUDA: {result_cuda.norm().item():.4f}")
 
             if rocm_is_available():
-                # ROCm would use HIP - simulate with CUDA for demo
                 print("  ROCm: Plugin available")
 
             if cpu_is_available():
@@ -255,7 +235,6 @@ def demo_declarative_patterns():
     print("Created declarative communication pattern")
     pattern = MultiDeviceTraining()
 
-    # CPU execution
     if cpu_is_available():
         try:
             grads_cpu = [torch.randn(512, 512) for _ in range(2)]
@@ -263,8 +242,6 @@ def demo_declarative_patterns():
             print(f"CPU AllReduce result shape: {[g.shape for g in result_cpu]}")
         except Exception as e:
             print(f"CPU execution failed: {e}")
-
-    # GPU execution
     if torch.cuda.is_available() and cuda_is_available():
         try:
             grads_gpu = [torch.randn(512, 512, device="cuda") for _ in range(4)]
@@ -293,17 +270,13 @@ def main():
     print("PCCL Plugins Demo")
     print("Demonstrating CPU, CUDA, RDMA, and ROCm plugin functionality")
 
-    # Demo individual plugins
     demo_cpu_plugin()
     demo_cuda_plugin()
     demo_rocm_plugin()
     demo_rdma_plugin()
 
-    # Demo communication patterns
     demo_communication_patterns()
     demo_declarative_patterns()
-
-    # Performance comparison
     benchmark_all_plugins()
 
     print_separator("Demo Complete")

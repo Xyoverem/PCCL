@@ -192,12 +192,9 @@ void OperatorManager::initializeBuiltInOperators() {
     {{"reduce_op", "SUM"}, {"participants", "0,1"}});
 }
 
-// New methods for Engine integration
 void OperatorManager::registerOperator(const std::string& name, const std::string& filepath) {
-  // Load operator configuration from file
   loadOperatorFromFile(filepath);
 
-  // Verify the operator was loaded
   if (!isOperatorRegistered(name)) {
     throw std::runtime_error("Failed to load operator '" + name + "' from file: " + filepath);
   }
@@ -208,8 +205,6 @@ std::shared_ptr<Op> OperatorManager::getOperator(const std::string& name) {
 }
 
 void OperatorManager::setClusterInfo(const std::unordered_map<std::string, std::string>& cluster_info) {
-  // Store cluster information for operator configuration
-  // This can be used to modify operator behavior based on cluster topology
   cluster_info_ = cluster_info;
 }
 

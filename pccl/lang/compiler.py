@@ -3,7 +3,8 @@ from dataclasses import dataclass
 import json
 
 from .config import OperatorConfig, TopologyConfig, AllreduceConfig, BroadcastConfig, AllgatherConfig, ReduceScatterConfig
-from .chunk import CollectiveIR
+# CollectiveIR is now defined in the IR system
+from ..ir.primitive_ir import *
 from .topology import TopologyBuilder
 
 @dataclass

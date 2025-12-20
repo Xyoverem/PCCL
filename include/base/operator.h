@@ -81,7 +81,6 @@ public:
 
   void loadOperatorFromFile(const std::string& filepath);
 
-  // New methods for Engine integration
   void registerOperator(const std::string& name, const std::string& filepath);
   std::shared_ptr<Op> getOperator(const std::string& name);
   void setClusterInfo(const std::unordered_map<std::string, std::string>& cluster_info);

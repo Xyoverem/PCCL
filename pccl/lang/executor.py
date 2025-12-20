@@ -4,6 +4,9 @@ import threading
 import queue
 
 from .compiler import ExecutionPlan
+from .execution_manager import ExecutionManager
+from .integrated_compiler import HardwareType
+from .tensor_transfer import IRExecutionContext, TensorTransferManager
 
 class ExecutionHandle:
     """Handle for asynchronous execution operations"""
@@ -41,12 +44,21 @@ class ExecutionHandle:
 class ExecutionEngine:
     """Execution engine for communication plans"""
 
-    def __init__(self):
+    def __init__(self, hardware_type: HardwareType = HardwareType.CUDA, device_id: int = 0, use_cpp_execution: bool = True):
         self._execution_counter = 0
         self._active_executions: Dict[str, ExecutionHandle] = {}
         self._worker_thread = None
         self._task_queue = queue.Queue()
         self._shutdown = False
+
+        self.hardware_type = hardware_type
+        self.device_id = device_id
+        self.use_cpp_execution = True
+
+        self.execution_manager = ExecutionManager(hardware_type)
+        self.tensor_manager = TensorTransferManager()
+        self.tensor_manager.initialize_cpp_engine()
+        self.cpp_available = True
 
         self._start_worker()
 
@@ -91,12 +103,32 @@ class ExecutionEngine:
 
     def _execute_plan_sync(self, plan: ExecutionPlan, input_data: Any) -> Any:
         """Internal synchronous execution implementation"""
-        result = input_data
+        result = self.execution_manager.execute(plan, input_data, self.hardware_type, self.device_id)
+        if not result['success']:
+            raise RuntimeError(f"C++ execution failed: {result.get('error_message', 'Unknown error')}")
 
-        for op in plan.operations:
-            result = self._execute_operation(op, result, plan.topology)
+        return input_data
 
-        return result
+    
+    def execute_with_tensor_transfer(self, ir_graph, input_tensors: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute IR graph with tensor data transfer"""
+        from .tensor_transfer import HybridExecutionBridge
+        bridge = HybridExecutionBridge(self.hardware_type.value, self.device_id)
+        return bridge.execute_ir_graph_with_tensors(ir_graph, input_tensors)
+
+    def transfer_tensor_to_cpp(self, tensor: Any, tensor_id: str) -> Dict[str, Any]:
+        """Transfer a single tensor to C++ memory"""
+        return self.tensor_manager.transfer_tensor_to_cpp(
+            tensor, tensor_id, self.device_id, self.hardware_type.value
+        )
+
+    def get_tensor_memory_info(self) -> Dict[str, Any]:
+        """Get information about tensor memory usage"""
+        return self.tensor_manager.get_memory_usage()
+
+    def cleanup_tensor_memory(self):
+        """Clean up tensor memory"""
+        self.tensor_manager.cleanup_all_tensors()
 
     def execute_plan_async(self, plan: ExecutionPlan, input_data: Any) -> ExecutionHandle:
         """Execute a plan asynchronously"""
@@ -118,154 +150,33 @@ class ExecutionEngine:
 
         return result
 
-    def _execute_operation(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute a single operation"""
-        op_type = operation.get('type', '')
-
-        if op_type == 'allreduce':
-            return self._execute_allreduce(operation, input_data, topology)
-        elif op_type == 'broadcast':
-            return self._execute_broadcast(operation, input_data, topology)
-        elif op_type == 'allgather':
-            return self._execute_allgather(operation, input_data, topology)
-        elif op_type == 'reduce_scatter':
-            return self._execute_reduce_scatter(operation, input_data, topology)
-        elif op_type == 'fused_allreduce':
-            return self._execute_fused_allreduce(operation, input_data, topology)
-        else:
-            return input_data
-
-    def _execute_allreduce(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute allreduce operation"""
-        participants = operation.get('participants', [0, 1])
-        algorithm = operation.get('algorithm', 'ring')
-        reduce_op = operation.get('reduce_op', 'sum')
-        buffer_size = operation.get('buffer_size', 128 * 1024 * 1024)
-
-        if hasattr(input_data, 'shape'):
-            import numpy as np
-            if isinstance(input_data, np.ndarray):
-                if algorithm == 'ring':
-                    result = self._simulate_ring_allreduce(input_data, participants, reduce_op)
-                elif algorithm == 'tree':
-                    result = self._simulate_tree_allreduce(input_data, participants, reduce_op)
-                else:
-                    result = input_data.copy()
-                return result
-
-        return input_data
-
-    def _execute_broadcast(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute broadcast operation"""
-        root_rank = operation.get('root_rank', 0)
-        participants = operation.get('participants', [0, 1])
-
-        if hasattr(input_data, 'shape'):
-            import numpy as np
-            if isinstance(input_data, np.ndarray):
-                return input_data.copy()
-
-        return input_data
-
-    def _execute_allgather(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute allgather operation"""
-        participants = operation.get('participants', [0, 1])
-        input_size = operation.get('input_size', 0)
-
-        if hasattr(input_data, 'shape'):
-            import numpy as np
-            if isinstance(input_data, np.ndarray):
-                gathered_data = np.concatenate([input_data] * len(participants))
-                return gathered_data
-
-        return input_data
-
-    def _execute_reduce_scatter(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute reduce-scatter operation"""
-        participants = operation.get('participants', [0, 1])
-        reduce_op = operation.get('reduce_op', 'sum')
-        input_size = operation.get('input_size', 0)
-        output_size = operation.get('output_size', 0)
-
-        if hasattr(input_data, 'shape'):
-            import numpy as np
-            if isinstance(input_data, np.ndarray):
-                chunk_size = input_size // len(participants)
-                start_idx = 0
-                end_idx = min(chunk_size, output_size)
-                return input_data[start_idx:end_idx]
-
-        return input_data
-
-    def _execute_fused_allreduce(self, operation: Dict[str, Any], input_data: Any, topology: Dict[str, Any]) -> Any:
-        """Execute fused allreduce operation"""
-        operations = operation.get('operations', [])
-
-        result = input_data
-        for op in operations:
-            result = self._execute_operation(op, result, topology)
-
-        return result
-
-    def _simulate_ring_allreduce(self, data: Any, participants: List[int], reduce_op: str) -> Any:
-        """Simulate ring allreduce execution"""
-        import numpy as np
-
-        if isinstance(data, np.ndarray):
-            result = data.copy()
-
-            if reduce_op == 'sum':
-                result *= len(participants)
-            elif reduce_op == 'avg':
-                result = result / len(participants)
-            elif reduce_op == 'max':
-                pass
-            elif reduce_op == 'min':
-                pass
-
-            return result
-
-        return data
-
-    def _simulate_tree_allreduce(self, data: Any, participants: List[int], reduce_op: str) -> Any:
-        """Simulate tree allreduce execution"""
-        import numpy as np
-
-        if isinstance(data, np.ndarray):
-            result = data.copy()
-
-            if reduce_op == 'sum':
-                result *= len(participants)
-            elif reduce_op == 'avg':
-                result = result / len(participants)
-            elif reduce_op == 'max':
-                pass
-            elif reduce_op == 'min':
-                pass
-
-            return result
-
-        return data
-
+    
+    
     def shutdown(self):
         """Shutdown the execution engine"""
         self._shutdown = True
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=1.0)
 
-# Global execution engine instance
+        # Cleanup tensor memory
+        self.cleanup_tensor_memory()
+
+        # Shutdown execution manager
+        if self.execution_manager:
+            self.execution_manager.shutdown()
+
 _execution_engine = None
 
-def get_execution_engine() -> ExecutionEngine:
+def get_execution_engine(hardware_type: HardwareType = HardwareType.CUDA, device_id: int = 0, use_cpp_execution: bool = True) -> ExecutionEngine:
     """Get the global execution engine instance"""
     global _execution_engine
     if _execution_engine is None:
-        _execution_engine = ExecutionEngine()
+        _execution_engine = ExecutionEngine(hardware_type, device_id, use_cpp_execution)
     return _execution_engine
 
-def execute_plan(plan: ExecutionPlan, input_data: Any) -> Any:
+def execute_plan(plan: ExecutionPlan, input_data: Any, hardware_type: HardwareType = HardwareType.CUDA, device_id: int = 0) -> Any:
     """Execute a compiled execution plan"""
-    engine = get_execution_engine()
+    engine = get_execution_engine(hardware_type, device_id)
     return engine.execute_plan_sync(plan, input_data)
 
 def execute_plan_async(plan: ExecutionPlan, input_data: Any) -> ExecutionHandle:
@@ -355,7 +266,6 @@ class PerformanceProfiler:
         """Clear all stored profiles"""
         self.profiles.clear()
 
-# Global profiler instance
 _profiler = None
 
 def get_profiler() -> PerformanceProfiler:

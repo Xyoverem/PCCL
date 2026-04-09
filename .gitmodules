@@ -1,12 +1,6 @@
 [submodule "thirdparty/json"]
 	path = thirdparty/json
 	url = https://github.com/nlohmann/json.git
-[submodule "thirdparty/cutlass"]
-	path = thirdparty/cutlass
-	url = https://github.com/NVIDIA/cutlass.git
-[submodule "thirdparty/composable_kernel"]
-	path = thirdparty/composable_kernel
-	url = https://github.com/ROCm/composable_kernel.git
 [submodule "thirdparty/spdlog"]
 	path = thirdparty/spdlog
 	url = https://github.com/gabime/spdlog.git

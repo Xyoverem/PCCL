@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pccl"
+version = "0.3.0"
+description = "Parallel Communication and Computing Library"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "nastyapple"}
+]
+keywords = ["gpu", "cuda", "collective-communication", "nccl", "allreduce", "rdma", "hpc"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Distributed Computing",
+    "Topic :: System :: Hardware",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/nastyapple/pccl"
+Repository = "https://github.com/nastyapple/pccl.git"
+Issues = "https://github.com/nastyapple/pccl/issues"
+
+[tool.setuptools]
+packages = ["pccl"]
+
+[tool.setuptools.package-data]
+pccl = ["*.so", "*.pyd"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true

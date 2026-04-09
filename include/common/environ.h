@@ -1,41 +1,49 @@
 #pragma once
 
-#include <mutex>
 #include <vector>
-#include <unordered_map>
+#include <map>
 #include <string>
 #include <string_view>
 
-namespace engine_c::utils {
+namespace engine_c::common {
 
-class LaunchEnvironments {
-  LaunchEnvironments();
-  const std::string_view _getEnv(const std::string &env) const;
-public:
-  static LaunchEnvironments& getInstance() {
-    static LaunchEnvironments instance;
-    return instance;
-  }
+class Environs
+{
 
-  static const std::string_view getEnv(const std::string &env) {
-    return getInstance()._getEnv(env);
-  }
+    Environs();
+    std::string_view _getEnv(const std::string& env);
 
-  static const std::vector<std::string> &listOpt() {
-    return getInstance().opts_;
-  }
+   public:
+    static Environs& getInstance()
+    {
+        static Environs instance;
+        return instance;
+    }
 
-  static void registerOpt(std::string option) {
-    std::lock_guard<std::mutex> lock(getInstance().initializer_mutex_);
-    getInstance().opts_.push_back(std::move(option));
-  }
+    static const std::string_view getEnv(const std::string& env)
+    {
+        return getInstance()._getEnv(env);
+    }
 
-private:
-  std::unordered_map<std::string, std::string> env_cache_;
-  std::vector<std::string> opts_;
-  std::mutex initializer_mutex_;
+    static const std::string getEnvOrDefault(const std::string& env, const std::string& default_val)
+    {
+        char* val = std::getenv(env.c_str());
+        return val != nullptr ? std::string(val) : default_val;
+    }
+
+    static const std::vector<std::string>& listOpt()
+    {
+        return getInstance().opts_;
+    }
+
+    static void registerOpt(std::string option)
+    {
+        getInstance().opts_.push_back(std::move(option));
+    }
+
+   private:
+    std::map<std::string, std::string> env_cache_;
+    std::vector<std::string> opts_;
 };
 
-}
-
-
+}  // namespace engine_c::common

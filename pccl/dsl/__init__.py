@@ -19,8 +19,9 @@ from .nodes import (
     RdmaReadNode,
     NotifyNode,
     WaitNotifyNode,
+    OcsBarrierNode,
 )
-from .graph import PrimitiveIRGraph
+from .graph import OcsPhase, PrimitiveIRGraph
 from .decorators import build_graph, Stream, CommunicationOp
 from .pipeline import Pipeline
 from .compiler import (
@@ -36,8 +37,8 @@ __all__ = [
     "SmReduceNode", "SmCopyNode", "TmaCopyNode", "TmaReduceNode",
     "MultimemReduceNode", "MultimemStoreNode",
     "CeCopyNode", "RdmaWriteNode", "RdmaReadNode",
-    "NotifyNode", "WaitNotifyNode",
-    "PrimitiveIRGraph",
+    "NotifyNode", "WaitNotifyNode", "OcsBarrierNode",
+    "OcsPhase", "PrimitiveIRGraph",
     "build_graph", "Stream", "CommunicationOp", "Pipeline",
     "Compiler", "compile_to_json_string", "compile_to_json_file",
     "discover_rules", "load_rules",

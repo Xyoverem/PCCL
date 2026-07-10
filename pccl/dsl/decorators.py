@@ -18,6 +18,7 @@ from .nodes import (
     RdmaReadNode,
     NotifyNode,
     WaitNotifyNode,
+    OcsBarrierNode,
 )
 from .graph import PrimitiveIRGraph
 
@@ -206,6 +207,61 @@ class CommunicationOp:
     def wait_notify(self, signal_id: int, source_rank: int) -> WaitNotifyNode:
         node = WaitNotifyNode(signal_id=signal_id, source_rank=source_rank, device=self.default_device)
         return self._add_node(node)
+
+    def ocs_barrier(
+        self,
+        barrier_id: int,
+        epoch_id: int,
+        next_epoch_id: int,
+        participant_ranks: tuple,
+        topology_id: int,
+        route_plan_id: int,
+        group_id: int = 0,
+        route_mode: str = "STATIC_PLAN",
+        algorithm: str = "auto",
+        backend: str = "pccl",
+        payload: bytes = b"",
+        timeout_ms: int = 0,
+    ) -> OcsBarrierNode:
+        """Insert a graph-wide OCS reconfiguration boundary.
+
+        The barrier joins every node built so far and becomes the dependency
+        root for every later stream. This is intentionally stronger than a
+        point-to-point notify/wait pair: it creates a safe host-control phase
+        cut for topology commit and release.
+        """
+        node = OcsBarrierNode(
+            group_id=group_id,
+            barrier_id=barrier_id,
+            epoch_id=epoch_id,
+            next_epoch_id=next_epoch_id,
+            participant_ranks=participant_ranks,
+            topology_id=topology_id,
+            route_mode=route_mode,
+            route_plan_id=route_plan_id,
+            algorithm=algorithm,
+            backend=backend,
+            payload=payload,
+            timeout_ms=timeout_ms,
+            device=DeviceType.CPU,
+        )
+
+        # A topology switch is valid only after every previously emitted
+        # operation has completed. Depend on the whole existing graph rather
+        # than the active stream alone, then reset all stream frontiers.
+        for previous_id in self.graph.nodes:
+            node.add_dependency(previous_id)
+        self.graph.add_node(node)
+        for dep_id in node.dependencies:
+            self.graph.get_node(dep_id).add_next_op(node.op_id)
+
+        self.last_node_id = node.op_id
+        self._nodes_in_order.append(node.op_id)
+        self._pending_dependencies.clear()
+        for stream_state in self._streams.values():
+            stream_state.last_node_id = node.op_id
+            stream_state.pending_dependencies.clear()
+        return node
 
     # --- Stream synchronization ---
     def wait(self, stream_name: str) -> None:

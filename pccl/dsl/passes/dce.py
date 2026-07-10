@@ -1,7 +1,7 @@
 """Dead Code Elimination Pass - removes unreachable nodes preserving side effects."""
 
 from typing import Set, List
-from ..nodes import RdmaWriteNode, NotifyNode
+from ..nodes import OcsBarrierNode, RdmaWriteNode, NotifyNode
 from ..graph import PrimitiveIRGraph
 
 
@@ -31,7 +31,7 @@ class DeadCodeEliminationPass:
         # Start from exit nodes and side-effect nodes
         start_nodes = []
         for node_id, node in graph.nodes.items():
-            if not node.next_ops or isinstance(node, (RdmaWriteNode, NotifyNode)):
+            if not node.next_ops or isinstance(node, (RdmaWriteNode, NotifyNode, OcsBarrierNode)):
                 start_nodes.append(node_id)
 
         for start_id in start_nodes:

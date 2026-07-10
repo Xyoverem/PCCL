@@ -35,6 +35,10 @@ class Compiler:
         if self.enable_dce:
             DeadCodeEliminationPass().run(graph)
         if self.enable_superopt:
+            if graph.has_ocs_barriers():
+                raise ValueError(
+                    "Superoptimization across OCS barriers is unsupported; "
+                    "compile the generated OCS phases independently")
             from .superopt.pass_ import SuperoptPass
             kwargs = {
                 "data_size_hint": self.data_size_hint,

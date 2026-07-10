@@ -1,7 +1,7 @@
 """PCCL DSL IR Nodes"""
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Tuple
 from enum import Enum
 import uuid
 
@@ -33,6 +33,7 @@ class PrimitiveOpType(Enum):
     RDMA_READ = "rdma.read"
     NOTIFY = "notify"
     WAIT_NOTIFY = "wait_notify"
+    OCS_BARRIER = "ocs.barrier"
     NOOP = "noop"
 
 
@@ -46,6 +47,7 @@ _OP_TYPE_TO_EXECUTOR: Dict[PrimitiveOpType, ExecutorType] = {
     PrimitiveOpType.MULTIMEM_STORE: ExecutorType.MULTIMEM,
     PrimitiveOpType.RDMA_WRITE: ExecutorType.RDMA,
     PrimitiveOpType.RDMA_READ: ExecutorType.RDMA,
+    PrimitiveOpType.OCS_BARRIER: ExecutorType.HOST,
     PrimitiveOpType.NOOP: ExecutorType.SM,
 }
 
@@ -62,6 +64,9 @@ class ReduceOp(Enum):
 
 
 VALID_DTYPES = {"float32", "float16", "bfloat16", "float8_e4m3", "float8_e5m2"}
+OCS_ALGORITHMS = {"ring", "rhd", "tree", "auto", "torch_native"}
+OCS_BACKENDS = {"torch", "pccl"}
+OCS_ROUTE_MODES = {"STATIC_PLAN", "ID_ROUTE", "SEGMENT_ROUTE", "USER_PLAN"}
 
 
 @dataclass
@@ -424,9 +429,118 @@ class WaitNotifyNode(IRNode):
         return {"signal_id": self.signal_id, "source_rank": self.source_rank}
 
 
+@dataclass
+class OcsBarrierNode(IRNode):
+    """Host-control boundary for an OCS topology reconfiguration.
+
+    This is deliberately not lowered to a CUDA primitive. The compiler emits
+    an OCS phased manifest, and the host runtime must obtain a controller
+    release before launching the next data phase.
+    """
+
+    group_id: int = 0
+    barrier_id: int = 0
+    epoch_id: int = 0
+    next_epoch_id: int = 1
+    participant_ranks: Tuple[int, ...] = ()
+    topology_id: int = 0
+    route_mode: str = "STATIC_PLAN"
+    route_plan_id: int = 0
+    algorithm: str = "auto"
+    backend: str = "pccl"
+    payload: bytes = b""
+    timeout_ms: int = 0
+
+    def __post_init__(self):
+        if self.op_type is None:
+            self.op_type = PrimitiveOpType.OCS_BARRIER
+        if self.device == DeviceType.CUDA:
+            self.device = DeviceType.CPU
+        IRNode.__post_init__(self)
+        if self.executor is None:
+            self.executor = ExecutorType.HOST
+
+        self.participant_ranks = tuple(int(rank) for rank in self.participant_ranks)
+        if self.payload is None:
+            self.payload = b""
+        elif not isinstance(self.payload, (bytes, bytearray, memoryview)):
+            raise TypeError("OcsBarrierNode: payload must be bytes-like")
+        else:
+            self.payload = bytes(self.payload)
+
+    @property
+    def participant_bitmap(self) -> int:
+        bitmap = 0
+        for rank in self.participant_ranks:
+            bitmap |= 1 << rank
+        return bitmap
+
+    def validate(self) -> bool:
+        if self.group_id < 0:
+            raise ValueError(f"OcsBarrierNode: group_id must be non-negative, got {self.group_id}")
+        if self.barrier_id < 0:
+            raise ValueError(
+                f"OcsBarrierNode: barrier_id must be non-negative, got {self.barrier_id}")
+        if self.epoch_id < 0 or self.next_epoch_id <= self.epoch_id:
+            raise ValueError(
+                "OcsBarrierNode: next_epoch_id must be greater than a non-negative epoch_id")
+        if not self.participant_ranks:
+            raise ValueError("OcsBarrierNode: participant_ranks must not be empty")
+        if any(rank < 0 for rank in self.participant_ranks):
+            raise ValueError("OcsBarrierNode: participant_ranks must be non-negative")
+        if len(set(self.participant_ranks)) != len(self.participant_ranks):
+            raise ValueError("OcsBarrierNode: participant_ranks must not contain duplicates")
+        if self.topology_id < 0 or self.route_plan_id < 0:
+            raise ValueError("OcsBarrierNode: topology_id and route_plan_id must be non-negative")
+        if self.route_mode not in OCS_ROUTE_MODES:
+            raise ValueError(f"OcsBarrierNode: unsupported route_mode '{self.route_mode}'")
+        if self.algorithm not in OCS_ALGORITHMS:
+            raise ValueError(f"OcsBarrierNode: unsupported algorithm '{self.algorithm}'")
+        if self.backend not in OCS_BACKENDS:
+            raise ValueError(f"OcsBarrierNode: unsupported backend '{self.backend}'")
+        if self.timeout_ms < 0:
+            raise ValueError("OcsBarrierNode: timeout_ms must be non-negative")
+        return True
+
+    def to_params(self) -> Dict[str, Any]:
+        return {
+            "group_id": self.group_id,
+            "barrier_id": self.barrier_id,
+            "epoch_id": self.epoch_id,
+            "next_epoch_id": self.next_epoch_id,
+            "participant_ranks": list(self.participant_ranks),
+            "participant_bitmap": self.participant_bitmap,
+            "topology_id": self.topology_id,
+            "route_mode": self.route_mode,
+            "route_plan_id": self.route_plan_id,
+            "algorithm": self.algorithm,
+            "backend": self.backend,
+            "payload_hex": self.payload.hex(),
+            "timeout_ms": self.timeout_ms,
+        }
+
+    def to_ocs_plan(self):
+        """Convert to the runtime plan without coupling DSL import order to OCS."""
+        from ..ocs.plan import OCSPlan
+
+        return OCSPlan(
+            group_id=self.group_id,
+            barrier_id=self.barrier_id,
+            epoch_id=self.epoch_id,
+            next_epoch_id=self.next_epoch_id,
+            participant_ranks=self.participant_ranks,
+            topology_id=self.topology_id,
+            route_mode=self.route_mode,
+            route_plan_id=self.route_plan_id,
+            algorithm=self.algorithm,
+            backend=self.backend,
+            payload=self.payload,
+        )
+
+
 IRNodeVariant = Union[
     SmReduceNode, SmCopyNode, TmaCopyNode, TmaReduceNode,
     MultimemReduceNode, MultimemStoreNode,
     CeCopyNode, RdmaWriteNode, RdmaReadNode,
-    NotifyNode, WaitNotifyNode,
+    NotifyNode, WaitNotifyNode, OcsBarrierNode,
 ]

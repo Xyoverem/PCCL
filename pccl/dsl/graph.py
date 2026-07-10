@@ -5,11 +5,20 @@ Dropped: clone, visualize, summary, get_nodes_by_device.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 from collections import deque
 import uuid
 
-from .nodes import IRNode, IRNodeVariant, PrimitiveOpType
+from .nodes import IRNode, IRNodeVariant, OcsBarrierNode, PrimitiveOpType
+
+
+@dataclass
+class OcsPhase:
+    """One data-execution phase followed by an optional OCS control barrier."""
+
+    index: int
+    nodes: List[IRNodeVariant]
+    barrier: Optional[OcsBarrierNode] = None
 
 
 @dataclass
@@ -113,7 +122,79 @@ class PrimitiveIRGraph:
                 node.validate()
 
         self._update_boundary_points()
+        self._validate_ocs_barrier_boundaries()
         return True
+
+    def has_ocs_barriers(self) -> bool:
+        return any(isinstance(node, OcsBarrierNode) for node in self.nodes.values())
+
+    def split_ocs_phases(self) -> List[OcsPhase]:
+        """Split a graph at OCS barriers after validating global phase cuts."""
+        if not self.has_ocs_barriers():
+            return [OcsPhase(index=0, nodes=self.topological_sort())]
+
+        self._validate_ocs_barrier_boundaries()
+        phases: List[OcsPhase] = []
+        current_nodes: List[IRNodeVariant] = []
+
+        for node in self.topological_sort():
+            if isinstance(node, OcsBarrierNode):
+                phases.append(OcsPhase(
+                    index=len(phases), nodes=current_nodes, barrier=node))
+                current_nodes = []
+            else:
+                current_nodes.append(node)
+
+        phases.append(OcsPhase(index=len(phases), nodes=current_nodes))
+        return phases
+
+    def _validate_ocs_barrier_boundaries(self) -> None:
+        """Ensure every OCS barrier is a graph-wide phase cut.
+
+        A host control barrier cannot safely be embedded in the current CUDA
+        persistent kernel. All data nodes before it must reach it, and every
+        entry node after it must wait on it. This makes phase splitting lossless.
+        """
+        if not self.has_ocs_barriers():
+            return
+
+        topo = self.topological_sort()
+        phase = 0
+        phase_by_id: Dict[str, int] = {}
+        phase_node_ids: List[List[str]] = [[]]
+        preceding_barrier: Optional[str] = None
+
+        for node in topo:
+            if isinstance(node, OcsBarrierNode):
+                required = set(phase_node_ids[phase])
+                missing = sorted(required.difference(node.dependencies))
+                if missing:
+                    raise ValueError(
+                        f"OCS barrier '{node.op_id}' must depend on every node in phase "
+                        f"{phase}; missing {missing}")
+                preceding_barrier = node.op_id
+                phase += 1
+                phase_node_ids.append([])
+                continue
+
+            same_phase_deps = [
+                dep_id for dep_id in node.dependencies
+                if phase_by_id.get(dep_id) == phase
+            ]
+            if phase > 0 and not same_phase_deps and preceding_barrier not in node.dependencies:
+                raise ValueError(
+                    f"phase-{phase} entry node '{node.op_id}' must depend on OCS barrier "
+                    f"'{preceding_barrier}'")
+
+            for dep_id in node.dependencies:
+                dep_phase = phase_by_id.get(dep_id)
+                if dep_phase is not None and dep_phase < phase:
+                    raise ValueError(
+                        f"data dependency '{dep_id}' -> '{node.op_id}' crosses an OCS barrier; "
+                        "depend on the barrier node instead")
+
+            phase_by_id[node.op_id] = phase
+            phase_node_ids[phase].append(node.op_id)
 
     def _update_boundary_points(self) -> None:
         self.entry_points = [nid for nid, node in self.nodes.items() if not node.dependencies]

@@ -65,6 +65,10 @@ class SuperoptPass:
         self.rules = rules if rules is not None else load_all_rules(max_k=max_k)
 
     def run(self, graph: PrimitiveIRGraph) -> PrimitiveIRGraph:
+        if graph.has_ocs_barriers():
+            raise ValueError(
+                "Superoptimization across OCS barriers is unsupported; "
+                "split the graph into OCS phases first")
         self._apply_executor_upgrades(graph)
         self._apply_egraph_optimization(graph)
         return graph

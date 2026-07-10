@@ -12,6 +12,11 @@ from .dsl import (
     build_graph, Stream, CommunicationOp,
     Compiler, compile_to_json_string, compile_to_json_file,
 )
+from .ocs import (
+    OCSError, OCSBarrierTimeout, OCSPlan, OCSPlanMismatchError,
+    OCSRuntime, StaticPlanController,
+    ocs_all_reduce, ocs_barrier_switch,
+)
 
 __all__ = [
     "__version__",
@@ -23,4 +28,7 @@ __all__ = [
     "PrimitiveIRGraph",
     "build_graph", "Stream", "CommunicationOp",
     "Compiler", "compile_to_json_string", "compile_to_json_file",
+    "OCSError", "OCSBarrierTimeout", "OCSPlan", "OCSPlanMismatchError",
+    "OCSRuntime", "StaticPlanController",
+    "ocs_all_reduce", "ocs_barrier_switch",
 ]

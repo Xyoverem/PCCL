@@ -77,6 +77,7 @@ class CommunicationOp:
         self._streams: Dict[str, '_StreamState'] = {}
         self._active_stream_name: Optional[str] = None
         self._pending_dependencies: List[str] = []
+        self._ocs_phase_root_id: Optional[str] = None
 
     @property
     def active_stream(self) -> Optional['_StreamState']:
@@ -86,7 +87,10 @@ class CommunicationOp:
 
     def _get_or_create_stream(self, name: str) -> '_StreamState':
         if name not in self._streams:
-            self._streams[name] = _StreamState(name)
+            stream = _StreamState(name)
+            if self._ocs_phase_root_id is not None:
+                stream.pending_dependencies.append(self._ocs_phase_root_id)
+            self._streams[name] = stream
         return self._streams[name]
 
     def __enter__(self) -> 'CommunicationOp':
@@ -256,6 +260,7 @@ class CommunicationOp:
             self.graph.get_node(dep_id).add_next_op(node.op_id)
 
         self.last_node_id = node.op_id
+        self._ocs_phase_root_id = node.op_id
         self._nodes_in_order.append(node.op_id)
         self._pending_dependencies.clear()
         for stream_state in self._streams.values():

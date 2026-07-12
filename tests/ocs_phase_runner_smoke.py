@@ -59,6 +59,14 @@ def main() -> None:
     report("process_group_ready")
 
     try:
+        preflight_input = torch.tensor([rank + 1], dtype=torch.int32, device="cuda")
+        preflight_output = torch.empty(world_size, dtype=torch.int32, device="cuda")
+        dist.all_gather_into_tensor(preflight_output, preflight_input)
+        expected_preflight = torch.arange(
+            1, world_size + 1, dtype=torch.int32, device="cuda")
+        if not torch.equal(preflight_output, expected_preflight):
+            raise RuntimeError("NCCL all_gather preflight returned unexpected values")
+        report("nccl_all_gather_ready")
         report("engine_constructing")
         get_engine()
         report("engine_constructed")

@@ -4,11 +4,6 @@
 
 namespace pccl::config {
 
-// Buffer allocation
-static constexpr long DEFAULT_BUFFER_SIZE = 1L << 30;       // 1GB
-static constexpr long MIN_BUFFER_SIZE     = 64L * 1024 * 1024;  // 64MB
-static constexpr long SIGNAL_SIZE         = 4096 * sizeof(int); // 16KB
-
 // Memory layout regions
 static constexpr long WORKSPACE_REGION_SIZE    = 256L * 1024 * 1024;
 static constexpr long DEV_WORKSPACE_SIZE       = 4096;
@@ -22,6 +17,11 @@ static constexpr long QUEUE_TOTAL_SIZE         = QUEUE_DATA_SIZE + QUEUE_META_SI
 static constexpr long CHANNEL_QUEUE_DATA_SIZE  = 4096;
 static constexpr long CHANNEL_QUEUE_META_SIZE  = 64;
 static constexpr long CHANNEL_QUEUE_TOTAL_SIZE = CHANNEL_QUEUE_DATA_SIZE + CHANNEL_QUEUE_META_SIZE;
+
+// Buffer allocation
+static constexpr long DEFAULT_BUFFER_SIZE = 1L << 30;       // 1GB
+static constexpr long MIN_BUFFER_SIZE     = WORKSPACE_REGION_SIZE;
+static constexpr long SIGNAL_SIZE         = 4096 * sizeof(int); // 16KB
 
 // Execution limits
 static constexpr int MAX_CHANNELS         = 8;

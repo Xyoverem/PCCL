@@ -1,12 +1,17 @@
 #include <engine/memory_layout.h>
 #include <engine/engine.h>
 #include <cstring>
+#include <stdexcept>
 
 namespace engine_c {
 
 void MemoryLayout::initialize(void* host_buffer, void* cuda_buffer,
                                void* host_signals, void* cuda_signals,
                                Workspace* workspace) {
+    if (BufferSize < WORKSPACE_REGION_SIZE) {
+        throw std::runtime_error("PCCL buffer is smaller than the workspace region");
+    }
+
     char* host_start = (char*)host_buffer + (BufferSize - WORKSPACE_REGION_SIZE);
     char* cuda_start = (char*)cuda_buffer + (BufferSize - WORKSPACE_REGION_SIZE);
 

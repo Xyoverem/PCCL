@@ -11,6 +11,8 @@
 
 namespace engine_c::cuda {
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 12000
+
 class NvlsManager {
    public:
     NvlsManager() = default;
@@ -203,5 +205,19 @@ class NvlsManager {
     size_t barrier_offset_ = 0;
     size_t buffer_size_ = 0;
 };
+
+#else
+
+class NvlsManager {
+   public:
+    void initialize(int, int, size_t) {}
+    bool available() const { return false; }
+    void* mc_va() const { return nullptr; }
+    void* phys_va() const { return nullptr; }
+    size_t barrier_offset() const { return 0; }
+    size_t buffer_size() const { return 0; }
+};
+
+#endif  // CUDA_VERSION >= 12000
 
 }  // namespace engine_c::cuda

@@ -67,15 +67,21 @@ def get_endpoint():
 def initialize_engine(group: dist.ProcessGroup):
     engine = get_engine()
     endpoint = engine.get_endpoint()
-    t_endpoint = to_tensor(endpoint)
+    backend = dist.get_backend(group)
+    device = None
+    if str(backend).lower() == "nccl":
+        device = torch.device("cuda", torch.cuda.current_device())
+
+    t_endpoint = to_tensor(endpoint).to(device=device)
     buffer_size = t_endpoint.numel()
-    t_buffer_size = torch.zeros((1), dtype=torch.int32)
-    buffer_sizes = torch.zeros((group.size()), dtype=torch.int32)
+    t_buffer_size = torch.zeros((1), dtype=torch.int32, device=device)
+    buffer_sizes = torch.zeros((group.size()), dtype=torch.int32, device=device)
     t_buffer_size[0] = buffer_size
     dist.all_gather_into_tensor(buffer_sizes, t_buffer_size, group)
     max_size = int(buffer_sizes.max().item())
-    all_endpoints_tensor = torch.zeros((group.size() * max_size), dtype=torch.uint8)
-    local_padded = torch.zeros(max_size, dtype=torch.uint8)
+    all_endpoints_tensor = torch.zeros(
+        (group.size() * max_size), dtype=torch.uint8, device=device)
+    local_padded = torch.zeros(max_size, dtype=torch.uint8, device=device)
     local_padded[:t_endpoint.numel()] = t_endpoint
     dist.all_gather_into_tensor(all_endpoints_tensor, local_padded, group)
 

@@ -50,17 +50,25 @@ def main() -> None:
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+
+    def report(stage: str) -> None:
+        print("OCS_PHASE_RUNNER_STAGE rank={} {}".format(rank, stage), flush=True)
+
     torch.cuda.set_device(local_rank)
     dist.init_process_group("nccl")
+    report("process_group_ready")
 
     try:
+        report("engine_initializing")
         initialize_engine(dist.group.WORLD)
+        report("engine_ready")
         runtime = OCSRuntime()
         runner = OcsPhaseRunner(runtime=runtime)
         prepared = runner.prepare(
             build_two_phase_graph(rank, world_size, args.elements),
             operation_name="ocs_phase_runner_smoke_rank{}".format(rank),
         )
+        report("phases_registered")
         input_tensor = torch.full(
             (args.elements,), float(rank + 1), dtype=torch.float32, device="cuda")
         output_tensor = torch.empty_like(input_tensor)
@@ -68,6 +76,7 @@ def main() -> None:
         started_ns = time.perf_counter_ns()
         result = runner.execute(prepared, input_tensor, output_tensor=output_tensor)
         torch.cuda.synchronize()
+        report("phases_executed")
         elapsed_us = (time.perf_counter_ns() - started_ns) // 1000
 
         if not torch.equal(result, input_tensor):

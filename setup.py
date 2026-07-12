@@ -32,12 +32,17 @@ rdma_enabled = os.path.exists('/usr/include/infiniband/verbs.h') or os.path.exis
 
 if CUDA_HOME:
     build_include_dirs.append(f'{CUDA_HOME}/include')
-    build_libraries.extend(['cuda', 'cudart', 'nvrtc', 'nvtx3interop'])
+    build_libraries.extend(['cuda', 'cudart', 'nvrtc'])
     build_library_dirs.extend([
+        f'{CUDA_HOME}/lib',
+        f'{CUDA_HOME}/lib/stubs',
         f'{CUDA_HOME}/lib64',
         f'{CUDA_HOME}/lib64/stubs',
         f'{CUDA_HOME}/targets/x86_64-linux/lib/stubs/',
     ])
+    if any(os.path.exists(os.path.join(directory, 'libnvtx3interop.so'))
+           for directory in build_library_dirs):
+        build_libraries.append('nvtx3interop')
 
 cxx_flags = ['-std=c++17',
              '-fPIC',
@@ -64,6 +69,9 @@ cuda_flags = ['-std=c++17',
               f'-gencode=arch=compute_{cuda_arch},code=sm_{cuda_arch}',
               '-lineinfo',
              ]
+
+if os.environ.get('PCCL_ALLOW_UNSUPPORTED_COMPILER') == '1':
+    cuda_flags.append('-allow-unsupported-compiler')
 
 if __name__ == '__main__':
 

@@ -60,6 +60,11 @@ def main() -> None:
     report("process_group_ready")
 
     try:
+        reduce_input = torch.tensor([rank + 1], dtype=torch.int32, device="cuda")
+        dist.all_reduce(reduce_input)
+        if reduce_input.item() != sum(range(1, world_size + 1)):
+            raise RuntimeError("NCCL all_reduce preflight returned an unexpected value")
+        report("nccl_all_reduce_ready")
         preflight_input = torch.tensor([rank + 1], dtype=torch.int32, device="cuda")
         preflight_output = torch.empty(world_size, dtype=torch.int32, device="cuda")
         dist.all_gather_into_tensor(preflight_output, preflight_input)

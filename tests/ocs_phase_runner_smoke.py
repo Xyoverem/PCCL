@@ -45,6 +45,7 @@ def build_two_phase_graph(rank: int, world_size: int, elements: int):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elements", type=int, default=4096)
+    parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
 
     rank = int(os.environ["RANK"])
@@ -67,6 +68,8 @@ def main() -> None:
         if not torch.equal(preflight_output, expected_preflight):
             raise RuntimeError("NCCL all_gather preflight returned unexpected values")
         report("nccl_all_gather_ready")
+        if args.preflight_only:
+            return
         report("engine_constructing")
         get_engine()
         report("engine_constructed")

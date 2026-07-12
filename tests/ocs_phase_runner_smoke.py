@@ -18,7 +18,7 @@ import torch.distributed as dist
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pccl import DeviceType, OCSRuntime, OcsPhaseRunner, Stream, build_graph
-from pccl.engine import initialize_engine
+from pccl.engine import get_engine, initialize_engine
 
 
 def build_two_phase_graph(rank: int, world_size: int, elements: int):
@@ -59,9 +59,12 @@ def main() -> None:
     report("process_group_ready")
 
     try:
-        report("engine_initializing")
+        report("engine_constructing")
+        get_engine()
+        report("engine_constructed")
+        report("endpoints_initializing")
         initialize_engine(dist.group.WORLD)
-        report("engine_ready")
+        report("endpoints_ready")
         runtime = OCSRuntime()
         runner = OcsPhaseRunner(runtime=runtime)
         prepared = runner.prepare(

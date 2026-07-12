@@ -2,8 +2,11 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <cublasLt.h>
 #include <c10/util/Exception.h>
+
+#if __has_include(<cublasLt.h>)
+#include <cublasLt.h>
+#endif
 
 #define CUDA_CHECK(call)                                                                           \
     do {                                                                                           \
@@ -25,9 +28,12 @@
         }                                                                        \
     } while (0)
 
+#if __has_include(<cublasLt.h>)
 #define CHECK_CUBLAS(call)                                                                        \
     do {                                                                                          \
         cublasStatus_t status = call;                                                             \
         TORCH_CHECK(status == CUBLAS_STATUS_SUCCESS, "cublas error at ", __FILE__, ":", __LINE__, \
                     "\nError code: ", status);                                                    \
     } while (0)
+
+#endif  // __has_include(<cublasLt.h>)

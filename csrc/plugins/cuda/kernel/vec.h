@@ -4,7 +4,13 @@
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
+
+#if __has_include(<cuda_fp8.h>)
 #include <cuda_fp8.h>
+#define PCCL_HAS_CUDA_FP8 1
+#else
+#define PCCL_HAS_CUDA_FP8 0
+#endif
 
 namespace engine_c::cuda {
 
@@ -263,6 +269,8 @@ struct alignas(16) Vec<__nv_bfloat16>
     }
 };
 
+#if PCCL_HAS_CUDA_FP8
+
 template <>
 struct alignas(16) Vec<__nv_fp8_e4m3>
 {
@@ -417,10 +425,14 @@ struct alignas(16) Vec<__nv_fp8_e5m2>
     }
 };
 
+#endif  // PCCL_HAS_CUDA_FP8
+
 using f32x4 = Vec<float>;
 using f16x8 = Vec<__half>;
 using bf16x8 = Vec<__nv_bfloat16>;
+#if PCCL_HAS_CUDA_FP8
 using f8_e4m3x16 = Vec<__nv_fp8_e4m3>;
 using f8_e5m2x16 = Vec<__nv_fp8_e5m2>;
+#endif
 
 }  // namespace engine_c::cuda

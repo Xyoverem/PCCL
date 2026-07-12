@@ -4,6 +4,12 @@
 
 namespace engine_c::cuda {
 
+#if !PCCL_HAS_CUDA_FP8
+__device__ __forceinline__ void unsupported_fp8() {
+  asm volatile("trap;");
+}
+#endif
+
 enum class DataType {
   F32,
   F16,
@@ -70,8 +76,13 @@ __device__ __forceinline__ void vector_copy(DataType dtype, const void* src, voi
     case DataType::F32: vector_copy_impl<float>(src, dst, n); break;
     case DataType::F16: vector_copy_impl<__half>(src, dst, n); break;
     case DataType::BF16: vector_copy_impl<__nv_bfloat16>(src, dst, n); break;
+#if PCCL_HAS_CUDA_FP8
     case DataType::FP8_E4M3: vector_copy_impl<__nv_fp8_e4m3>(src, dst, n); break;
     case DataType::FP8_E5M2: vector_copy_impl<__nv_fp8_e5m2>(src, dst, n); break;
+#else
+    case DataType::FP8_E4M3:
+    case DataType::FP8_E5M2: unsupported_fp8(); break;
+#endif
   }
 }
 
@@ -80,8 +91,13 @@ __device__ __forceinline__ void vector_add(DataType dtype, const void* a, const 
     case DataType::F32: vector_add_impl<float>(a, b, c, n); break;
     case DataType::F16: vector_add_impl<__half>(a, b, c, n); break;
     case DataType::BF16: vector_add_impl<__nv_bfloat16>(a, b, c, n); break;
+#if PCCL_HAS_CUDA_FP8
     case DataType::FP8_E4M3: vector_add_impl<__nv_fp8_e4m3>(a, b, c, n); break;
     case DataType::FP8_E5M2: vector_add_impl<__nv_fp8_e5m2>(a, b, c, n); break;
+#else
+    case DataType::FP8_E4M3:
+    case DataType::FP8_E5M2: unsupported_fp8(); break;
+#endif
   }
 }
 
@@ -120,8 +136,13 @@ __device__ __forceinline__ void smem_vector_add(DataType dtype, const void* a, c
     case DataType::F32: smem_vector_add_impl<float>(a, b, c, n); break;
     case DataType::F16: smem_vector_add_impl<__half>(a, b, c, n); break;
     case DataType::BF16: smem_vector_add_impl<__nv_bfloat16>(a, b, c, n); break;
+#if PCCL_HAS_CUDA_FP8
     case DataType::FP8_E4M3: smem_vector_add_impl<__nv_fp8_e4m3>(a, b, c, n); break;
     case DataType::FP8_E5M2: smem_vector_add_impl<__nv_fp8_e5m2>(a, b, c, n); break;
+#else
+    case DataType::FP8_E4M3:
+    case DataType::FP8_E5M2: unsupported_fp8(); break;
+#endif
   }
 }
 
@@ -185,8 +206,13 @@ __device__ __forceinline__ void tma_vector_copy(DataType dtype, const void* src,
         case DataType::F32: tma_vector_copy_impl<float>(src, dst, n); break;
         case DataType::F16: tma_vector_copy_impl<__half>(src, dst, n); break;
         case DataType::BF16: tma_vector_copy_impl<__nv_bfloat16>(src, dst, n); break;
+#if PCCL_HAS_CUDA_FP8
         case DataType::FP8_E4M3: tma_vector_copy_impl<__nv_fp8_e4m3>(src, dst, n); break;
         case DataType::FP8_E5M2: tma_vector_copy_impl<__nv_fp8_e5m2>(src, dst, n); break;
+#else
+        case DataType::FP8_E4M3:
+        case DataType::FP8_E5M2: unsupported_fp8(); break;
+#endif
     }
 }
 
@@ -247,8 +273,13 @@ __device__ __forceinline__ void tma_vector_add(DataType dtype, const void* a, co
         case DataType::F32: tma_vector_add_impl<float>(a, b, c, n); break;
         case DataType::F16: tma_vector_add_impl<__half>(a, b, c, n); break;
         case DataType::BF16: tma_vector_add_impl<__nv_bfloat16>(a, b, c, n); break;
+#if PCCL_HAS_CUDA_FP8
         case DataType::FP8_E4M3: tma_vector_add_impl<__nv_fp8_e4m3>(a, b, c, n); break;
         case DataType::FP8_E5M2: tma_vector_add_impl<__nv_fp8_e5m2>(a, b, c, n); break;
+#else
+        case DataType::FP8_E4M3:
+        case DataType::FP8_E5M2: unsupported_fp8(); break;
+#endif
     }
 }
 

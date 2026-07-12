@@ -8,10 +8,10 @@
 #include <plugins/registry.h>
 #include <plugins/base.h>
 #include <common.h>
+#include <common/nvtx.h>
 #include <common/serialize.h>
 #include <common/socket_utils.h>
 #include <fmt/format.h>
-#include <nvtx3/nvtx3.hpp>
 #include <string>
 #include <cstring>
 #include <fstream>
@@ -328,7 +328,7 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
                           static_cast<int>(input.scalar_type()), input.numel());
     bool use_nvls_this_call = host_workspace->use_nvls_ && host_workspace->nvls_mc_va_;
 
-    { nvtx3::scoped_range nvtx_tma{"setupTma"};
+    { NvtxRange nvtx_tma{"setupTma"};
     int input_elem_size = static_cast<int>(input.element_size());
     void* self_cuda_buf = BufferManager::getBuffer(workspace->device_b_);
     void* output_ptr = (coll_type == "alltoall") ? nullptr : (void*)output.data_ptr();
@@ -454,7 +454,7 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
     host_workspace->host_proxy = host_dev->getProxyState();
     host_workspace->ce_proxy = host_dev->getCeProxyState();
 
-    { nvtx3::scoped_range nvtx_ws{"h2d_workspace"};
+    { NvtxRange nvtx_ws{"h2d_workspace"};
     size_t copy_size = is_first_call ? MemoryLayout::DEV_WORKSPACE_SIZE
                                      : DeviceWorkspace::PERCALL_COPY_SIZE;
     cuda_dev->memcpy_async(workspace->dev_workspace_a, workspace->dev_workspace_b,
@@ -468,7 +468,7 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
     host_workspace->peer_signals[0] = saved_peer_signals_0;
     host_workspace->peer_signals[1] = saved_peer_signals_1;
 
-    { nvtx3::scoped_range nvtx_in{"d2d_input_copy"};
+    { NvtxRange nvtx_in{"d2d_input_copy"};
     if (use_nvls_this_call) {
         cuda_dev->memcpy_async((void*)input.data_ptr(), cuda_dev->nvlsPhysVa(),
                                input.nbytes(), workspace->device_b_, workspace->device_b_, stream);
@@ -485,11 +485,11 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
     }
     }
 
-    { nvtx3::scoped_range nvtx_exe{"execute"};
+    { NvtxRange nvtx_exe{"execute"};
     cuda_dev->execute(workspace);
     }
 
-    { nvtx3::scoped_range nvtx_out{"d2d_output_copy"};
+    { NvtxRange nvtx_out{"d2d_output_copy"};
     if (use_nvls_this_call) {
         cuda_dev->memcpy_async(cuda_dev->nvlsPhysVa(), (void*)output.data_ptr(),
                                output.nbytes(), workspace->device_b_, workspace->device_b_, stream);

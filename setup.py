@@ -32,7 +32,7 @@ rdma_enabled = os.path.exists('/usr/include/infiniband/verbs.h') or os.path.exis
 
 if CUDA_HOME:
     build_include_dirs.append(f'{CUDA_HOME}/include')
-    build_libraries.extend(['cuda', 'cudart', 'nvrtc'])
+    build_libraries.extend(['cuda', 'cudart', 'nvrtc', 'nvToolsExt'])
     build_library_dirs.extend([
         f'{CUDA_HOME}/lib',
         f'{CUDA_HOME}/lib/stubs',

@@ -3,6 +3,7 @@
 #include <engine/workspace.h>
 #include <engine/fused_step.h>
 #include <common.h>
+#include <common/nvtx.h>
 #include <fmt/format.h>
 #include <unordered_map>
 #include <mutex>
@@ -17,7 +18,6 @@
 #include <stdexcept>
 #include "kernel/proxy_trigger.h"
 #include "kernel/primitive_config.h"
-#include <nvtx3/nvtx3.hpp>
 #include "./cuda_defs.h"
 #include "./cuda_executor.h"
 #include "./tma_manager.h"
@@ -306,17 +306,17 @@ class CudaDevice : public DeviceBase
             smem = TMA_SMEM_BYTES;
 
         if (host_ws->use_nvls_ && host_ws->nvls_mc_va_) {
-            { nvtx3::scoped_range nvtx_mk{"nvls_kernel"};
+            { NvtxRange nvtx_mk{"nvls_kernel"};
             launch_nvls_kernel(cfg_nvls_blocks, stream, workspace->dev_workspace_b);
             }
         } else if (host_ws->use_fused_ && host_ws->fused_desc_) {
-            { nvtx3::scoped_range nvtx_mk{"fused_kernel"};
+            { NvtxRange nvtx_mk{"fused_kernel"};
             launch_fused_kernel(cfg_num_blocks, stream, workspace->dev_workspace_b,
                                 host_ws->fused_desc_, smem);
             }
         } else {
             int queue_capacity = host_ws->ring_buffers_[0].meta_a_->capacity;
-            { nvtx3::scoped_range nvtx_mk{"executor_kernel"};
+            { NvtxRange nvtx_mk{"executor_kernel"};
             launch_cuda_kernel(cfg_num_blocks, stream, workspace->dev_workspace_b, smem,
                                host_ws->total_primitives, queue_capacity);
             }

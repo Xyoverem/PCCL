@@ -8,10 +8,14 @@ Run with two compatible GPUs, for example:
 import argparse
 import json
 import os
+from pathlib import Path
+import sys
 import time
 
 import torch
 import torch.distributed as dist
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pccl import DeviceType, OCSRuntime, OcsPhaseRunner, Stream, build_graph
 from pccl.engine import initialize_engine

@@ -300,7 +300,7 @@ class CudaDevice : public DeviceBase
         DeviceWorkspace* host_ws = workspace->dev_workspace_a;
         cudaStream_t stream = c10::cuda::getCurrentCUDAStream();
 
-        bool use_tma = host_ws->has_tma_ops;
+        bool use_tma = PCCL_HAS_TMA_HOST && host_ws->has_tma_ops;
         int smem = use_tma ? TMA_SMEM_BYTES : 0;
         if (exclusive_sm && smem < TMA_SMEM_BYTES)
             smem = TMA_SMEM_BYTES;

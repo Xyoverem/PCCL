@@ -5,6 +5,13 @@
 #include <cstdint>
 
 // Host-side CUtensorMap utilities for TMA bulk copy.
+// CUtensorMap first appeared in CUDA 12. Keep the SM fallback buildable with
+// CUDA 11.x, where TMA primitives are transparently executed by the SM path.
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 12000
+#define PCCL_HAS_TMA_HOST 1
+#else
+#define PCCL_HAS_TMA_HOST 0
+#endif
 
 namespace engine_c::cuda {
 
@@ -13,6 +20,8 @@ static constexpr int TMA_MAX_PEERS = 8;
 static constexpr int TMA_SMEM_TOTAL = 128 * 1024;
 static constexpr int TMA_SMEM_OVERHEAD = 256;  // alignment (128) + mbarriers (16) + padding
 static constexpr int TMA_SMEM_PER_BUF = (TMA_SMEM_TOTAL - TMA_SMEM_OVERHEAD) / 2;
+
+#if PCCL_HAS_TMA_HOST
 
 // Compute adaptive tile_outer based on shared memory budget per double-buffer slot.
 // Returns clamped value in [1, 256] (CUtensorMap boxDim limit).
@@ -90,12 +99,15 @@ inline CUtensorMap create_buffer_tma_desc(void* buffer_ptr,
     return tensor_map;
 }
 
+#endif  // PCCL_HAS_TMA_HOST
+
 }  // namespace engine_c::cuda
 
 #include <engine/workspace.h>
 
 namespace engine_c::cuda {
 
+#if PCCL_HAS_TMA_HOST
 struct TmaDescriptors {
     CUtensorMap self_desc;
     CUtensorMap output_desc;
@@ -107,5 +119,8 @@ struct TmaDescriptors {
     bool valid;
     bool output_valid;
 };
+#else
+struct TmaDescriptors {};
+#endif
 
 }  // namespace engine_c::cuda

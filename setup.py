@@ -1,4 +1,5 @@
 import os
+import re
 import setuptools
 import glob
 from setuptools import find_packages
@@ -54,9 +55,13 @@ if rdma_enabled:
     cxx_flags.append('-DPCCL_RDMA_ENABLED')
     build_libraries.append('ibverbs')
 
+cuda_arch = os.environ.get('PCCL_CUDA_ARCH', '90a')
+if not re.fullmatch(r'\d+a?', cuda_arch):
+    raise ValueError('PCCL_CUDA_ARCH must be a CUDA capability such as 86 or 90a')
+
 cuda_flags = ['-std=c++17',
               '-O3',
-              '-gencode=arch=compute_90a,code=sm_90a',
+              f'-gencode=arch=compute_{cuda_arch},code=sm_{cuda_arch}',
               '-lineinfo',
              ]
 

@@ -13,6 +13,8 @@
 
 namespace engine_c::cuda {
 
+#if PCCL_HAS_TMA_HOST
+
 TmaManager::~TmaManager() {
     if (device_desc_) {
         cudaFree(device_desc_);
@@ -130,5 +132,18 @@ void TmaManager::setup(
     PCCL_LOG_INFO("TMA descriptors ready: {} peers, tile={}x{}, elem_size={}",
                   num_peers, TMA_TILE_INNER, tile_outer, elem_size);
 }
+
+#else
+
+TmaManager::~TmaManager() = default;
+
+void TmaManager::setup(
+        const std::map<int, std::map<DeviceType, std::tuple<void*, void*>>>&,
+        DeviceType, void*, void*, int, int, cudaStream_t,
+        DeviceWorkspace* host_workspace) {
+    host_workspace->tma_desc = nullptr;
+}
+
+#endif
 
 }  // namespace engine_c::cuda

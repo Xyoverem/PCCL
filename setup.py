@@ -1,5 +1,6 @@
 import os
 import re
+import sysconfig
 import setuptools
 import glob
 from setuptools import find_packages
@@ -23,6 +24,11 @@ build_include_dirs = [
     f'{current_dir}/thirdparty/spdlog/include',
     *include_paths(),
 ]
+
+nvtx_wheel_include = os.path.join(
+    sysconfig.get_paths()["purelib"], "nvidia", "nvtx", "include")
+if os.path.isdir(nvtx_wheel_include):
+    build_include_dirs.append(nvtx_wheel_include)
 
 build_libraries = []
 

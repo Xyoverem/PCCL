@@ -136,7 +136,10 @@ def main() -> None:
         )
         prepared.close()
     finally:
-        dist.destroy_process_group()
+        if dist.is_initialized():
+            report("process_group_destroying")
+            dist.destroy_process_group()
+            report("process_group_destroyed")
 
 
 if __name__ == "__main__":

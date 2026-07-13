@@ -46,6 +46,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elements", type=int, default=4096)
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--endpoint-only", action="store_true")
     args = parser.parse_args()
 
     rank = int(os.environ["RANK"])
@@ -81,6 +82,14 @@ def main() -> None:
         report("endpoints_initializing")
         initialize_engine(dist.group.WORLD)
         report("endpoints_ready")
+        if args.endpoint_only:
+            dist.barrier()
+            print(
+                "OCS_PHASE_RUNNER_ENDPOINT_PASS "
+                + json.dumps({"rank": rank, "world_size": world_size}, sort_keys=True),
+                flush=True,
+            )
+            return
         runtime = OCSRuntime()
         runner = OcsPhaseRunner(runtime=runtime)
         prepared = runner.prepare(

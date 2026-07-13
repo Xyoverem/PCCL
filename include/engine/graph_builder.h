@@ -19,6 +19,7 @@ class GraphBuilder
     bool loadFromFile(const std::string& filename);
     bool build(DeviceWorkspace* workspace);
     bool buildFusedDescriptor(FusedStepDescriptor* desc);
+    bool requiresCeProxy() const;
     const std::string& collectiveType() const { return collective_type_; }
 
    private:

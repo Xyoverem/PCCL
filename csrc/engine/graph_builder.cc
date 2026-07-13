@@ -1,5 +1,6 @@
 #include <engine/graph_builder.h>
 #include <plugins/base.h>
+#include <plugins/cuda/kernel/primitive_config.h>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <cstring>
@@ -145,6 +146,18 @@ bool GraphBuilder::build(DeviceWorkspace* workspace)
                 sizeof(ProxyTrigger) * num_primitives_);
 
     return true;
+}
+
+bool GraphBuilder::requiresCeProxy() const
+{
+    for (const ProxyTrigger& trigger : operators_) {
+        char primitive_type = reinterpret_cast<const char*>(&trigger)[0];
+        if (primitive_type >= cuda::cuda_ce_copy_f32 &&
+            primitive_type <= cuda::cuda_ce_copy_f8_e5m2) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool GraphBuilder::buildFusedDescriptor(FusedStepDescriptor* desc)

@@ -447,7 +447,9 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
     // Inject host proxy state for RDMA ops (nullptr if no RDMA)
     auto host_dev = getDev(workspace->device_a_);
     host_workspace->host_proxy = host_dev->getProxyState();
-    host_workspace->ce_proxy = host_dev->getCeProxyState();
+    host_workspace->ce_proxy = graph_builder->requiresCeProxy()
+        ? host_dev->getCeProxyState()
+        : nullptr;
 
     { NvtxRange nvtx_ws{"h2d_workspace"};
     size_t copy_size = is_first_call ? MemoryLayout::DEV_WORKSPACE_SIZE

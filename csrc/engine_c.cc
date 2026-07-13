@@ -248,14 +248,6 @@ void Engine::Impl::first_call_setup(Workspace* workspace, DeviceWorkspace* host_
             sizeof(QueueMeta), workspace->device_a_, workspace->device_b_);
     }
 
-    // Setup TMA descriptors for default dtype (f32) on first call
-    void* stream = getDev(workspace->device_b_)->getStream();
-    void* self_cuda_buf = BufferManager::getBuffer(workspace->device_b_);
-    getDev(workspace->device_b_)->setupTma(
-        remote_buffers_, self_cuda_buf, /*output_buf=*/nullptr, /*elem_size=*/4, rank_,
-        stream, host_workspace);
-    getDev(workspace->device_b_)->streamSync(stream);
-
     // Setup NVLS multicast via device plugin (one-time)
     if (!nvls_initialized_) {
         nvls_initialized_ = true;
@@ -327,16 +319,6 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
     cuda_dev->prepareNvls(host_workspace, graph_is_allreduce,
                           static_cast<int>(input.scalar_type()), input.numel());
     bool use_nvls_this_call = host_workspace->use_nvls_ && host_workspace->nvls_mc_va_;
-
-    { NvtxRange nvtx_tma{"setupTma"};
-    int input_elem_size = static_cast<int>(input.element_size());
-    void* self_cuda_buf = BufferManager::getBuffer(workspace->device_b_);
-    void* output_ptr = (coll_type == "alltoall") ? nullptr : (void*)output.data_ptr();
-    cuda_dev->setupTma(
-        remote_buffers_, self_cuda_buf, output_ptr,
-        input_elem_size, rank_,
-        stream, host_workspace);
-    }
 
     if (!graph_cached) {
         graph_builder->build(host_workspace);
@@ -431,6 +413,19 @@ void Engine::Impl::prepare_and_launch(const std::string& name,
         }
 
         graph_cached_ops_.insert(name);
+    }
+
+    if (host_workspace->has_tma_ops) {
+        NvtxRange nvtx_tma{"setupTma"};
+        int input_elem_size = static_cast<int>(input.element_size());
+        void* self_cuda_buf = BufferManager::getBuffer(workspace->device_b_);
+        void* output_ptr = (coll_type == "alltoall") ? nullptr : (void*)output.data_ptr();
+        cuda_dev->setupTma(
+            remote_buffers_, self_cuda_buf, output_ptr,
+            input_elem_size, rank_,
+            stream, host_workspace);
+    } else {
+        host_workspace->tma_desc = nullptr;
     }
 
     // Reset HOST-SIDE ring buffer head/tail (needed every iteration)

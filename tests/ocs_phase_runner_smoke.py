@@ -47,6 +47,8 @@ def main() -> None:
     parser.add_argument("--elements", type=int, default=4096)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--endpoint-only", action="store_true")
+    parser.add_argument("--register-only", action="store_true")
+    parser.add_argument("--barrier-only", action="store_true")
     args = parser.parse_args()
 
     rank = int(os.environ["RANK"])
@@ -97,6 +99,37 @@ def main() -> None:
             operation_name="ocs_phase_runner_smoke_rank{}".format(rank),
         )
         report("phases_registered")
+        if args.register_only:
+            dist.barrier()
+            print(
+                "OCS_PHASE_RUNNER_REGISTER_PASS "
+                + json.dumps({"rank": rank, "world_size": world_size}, sort_keys=True),
+                flush=True,
+            )
+            prepared.close()
+            return
+        if args.barrier_only:
+            barrier_plan = prepared.barriers_after_phase[0]
+            if barrier_plan is None:
+                raise RuntimeError("two-phase smoke graph is missing its OCS barrier")
+            release = runtime.barrier_switch(barrier_plan)
+            if release["status"] != "OK":
+                raise RuntimeError("unexpected OCS release: {}".format(release))
+            dist.barrier()
+            print(
+                "OCS_PHASE_RUNNER_BARRIER_PASS "
+                + json.dumps(
+                    {
+                        "barrier_latency_us": release["latency_us"],
+                        "rank": rank,
+                        "world_size": world_size,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            prepared.close()
+            return
         input_tensor = torch.full(
             (args.elements,), float(rank + 1), dtype=torch.float32, device="cuda")
         output_tensor = torch.empty_like(input_tensor)

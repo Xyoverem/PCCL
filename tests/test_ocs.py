@@ -13,7 +13,15 @@ import torch.multiprocessing as mp
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pccl import OCSPlan, OCSRuntime, StaticPlanController, ocs_all_reduce
+from pccl import (
+    OCSPlan,
+    OCSPlanController,
+    OCSRuntime,
+    StaticPlanController,
+    SwitchConnector,
+    TorchDistributedSwitchConnector,
+    ocs_all_reduce,
+)
 from pccl.ocs import OCSBarrierTimeout, OCSPlanMismatchError
 import pccl.ocs.runtime as runtime_module
 
@@ -40,6 +48,12 @@ class FakeRuntime:
     def barrier_switch(self, plan, group=None, timeout=None):
         self.calls.append(("barrier_switch", plan.barrier_id))
         return {"status": "OK"}
+
+
+def test_controller_and_connector_protocols_are_structural():
+    assert isinstance(StaticPlanController(), OCSPlanController)
+    assert isinstance(TorchDistributedSwitchConnector(), SwitchConnector)
+    assert isinstance(FakeConnector(None), SwitchConnector)
 
 
 def test_ocs_plan_defaults_and_bitmap():

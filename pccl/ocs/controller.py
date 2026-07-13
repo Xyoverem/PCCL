@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Dict, Iterable, Mapping, Optional, Protocol, Tuple, Union, runtime_checkable
 
 from .plan import OCSPlan, normalize_plan_sequence
 
 
 PlanInput = Union[Iterable[OCSPlan], Mapping[str, Iterable[OCSPlan]]]
+
+
+@runtime_checkable
+class OCSPlanController(Protocol):
+    """Northbound controller contract consumed by :class:`OCSRuntime`."""
+
+    def next_plan(self, event_key: str, rank: int, world_size: int) -> OCSPlan:
+        """Return the precomputed plan for one collective event."""
 
 
 class StaticPlanController:

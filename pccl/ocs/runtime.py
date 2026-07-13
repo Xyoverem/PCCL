@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 import time
 
 import torch
 import torch.distributed as dist
 
-from .controller import StaticPlanController
+from .controller import OCSPlanController, StaticPlanController
 from .exceptions import OCSBarrierTimeout, OCSPlanMismatchError
 from .plan import OCSPlan
 
@@ -41,6 +41,19 @@ def _rank_world_size(group: Optional[dist.ProcessGroup] = None) -> Tuple[int, in
     return dist.get_rank(group), dist.get_world_size(group)
 
 
+@runtime_checkable
+class SwitchConnector(Protocol):
+    """Southbound READY/RELEASE transport contract for an OCS barrier."""
+
+    def exchange_ready(
+        self,
+        ready_record: Dict[str, Any],
+        group: Optional[dist.ProcessGroup] = None,
+        timeout: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """Collect READY records and return the controller-visible set."""
+
+
 class TorchDistributedSwitchConnector:
     """Switch simulation backed by torch.distributed object collectives."""
 
@@ -64,8 +77,8 @@ class OCSRuntime:
 
     def __init__(
         self,
-        controller: Optional[StaticPlanController] = None,
-        connector: Optional[TorchDistributedSwitchConnector] = None,
+        controller: Optional[OCSPlanController] = None,
+        connector: Optional[SwitchConnector] = None,
     ) -> None:
         self.controller = controller if controller is not None else StaticPlanController()
         self.connector = connector if connector is not None else TorchDistributedSwitchConnector()

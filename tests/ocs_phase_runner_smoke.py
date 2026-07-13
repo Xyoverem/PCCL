@@ -49,6 +49,7 @@ def main() -> None:
     parser.add_argument("--endpoint-only", action="store_true")
     parser.add_argument("--register-only", action="store_true")
     parser.add_argument("--barrier-only", action="store_true")
+    parser.add_argument("--first-phase-only", action="store_true")
     args = parser.parse_args()
 
     rank = int(os.environ["RANK"])
@@ -133,6 +134,24 @@ def main() -> None:
         input_tensor = torch.full(
             (args.elements,), float(rank + 1), dtype=torch.float32, device="cuda")
         output_tensor = torch.empty_like(input_tensor)
+
+        if args.first_phase_only:
+            first_phase_name = prepared.operation_names[0]
+            if first_phase_name is None:
+                raise RuntimeError("two-phase smoke graph is missing its first data phase")
+            result = runner._engine().execute_operation(
+                first_phase_name, input_tensor, output_tensor)
+            torch.cuda.synchronize()
+            if not torch.equal(result, input_tensor):
+                raise RuntimeError("first phase output does not match this rank's input")
+            dist.barrier()
+            print(
+                "OCS_PHASE_RUNNER_FIRST_PHASE_PASS "
+                + json.dumps({"rank": rank, "world_size": world_size}, sort_keys=True),
+                flush=True,
+            )
+            prepared.close()
+            return
 
         started_ns = time.perf_counter_ns()
         result = runner.execute(prepared, input_tensor, output_tensor=output_tensor)

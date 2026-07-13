@@ -21,15 +21,21 @@ from pccl import DeviceType, OCSRuntime, OcsPhaseRunner, Stream, build_graph
 from pccl.engine import get_engine, initialize_engine
 
 
-def build_two_phase_graph(rank: int, world_size: int, elements: int):
+def build_two_phase_graph(
+    rank: int,
+    world_size: int,
+    elements: int,
+    barrier_id: int,
+    epoch_id: int,
+):
     def build(op):
         op.tensor(dtype="float32", shape=(elements,))
         with Stream("phase0"):
             op.sm_copy(source_rank=rank, src_offset=0, dst_offset=0, size=elements)
         op.ocs_barrier(
-            barrier_id=101,
-            epoch_id=0,
-            next_epoch_id=1,
+            barrier_id=barrier_id,
+            epoch_id=epoch_id,
+            next_epoch_id=epoch_id + 1,
             participant_ranks=tuple(range(world_size)),
             topology_id=1,
             route_plan_id=101,
@@ -45,12 +51,23 @@ def build_two_phase_graph(rank: int, world_size: int, elements: int):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elements", type=int, default=4096)
+    parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--endpoint-only", action="store_true")
     parser.add_argument("--register-only", action="store_true")
     parser.add_argument("--barrier-only", action="store_true")
     parser.add_argument("--first-phase-only", action="store_true")
     args = parser.parse_args()
+    if args.iterations < 1:
+        parser.error("--iterations must be positive")
+    if args.iterations != 1 and any((
+        args.preflight_only,
+        args.endpoint_only,
+        args.register_only,
+        args.barrier_only,
+        args.first_phase_only,
+    )):
+        parser.error("--iterations only applies to the full phase-runner smoke")
 
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -96,7 +113,7 @@ def main() -> None:
         runtime = OCSRuntime()
         runner = OcsPhaseRunner(runtime=runtime)
         prepared = runner.prepare(
-            build_two_phase_graph(rank, world_size, args.elements),
+            build_two_phase_graph(rank, world_size, args.elements, barrier_id=101, epoch_id=0),
             operation_name="ocs_phase_runner_smoke_rank{}".format(rank),
         )
         report("phases_registered")
@@ -154,22 +171,39 @@ def main() -> None:
             return
 
         started_ns = time.perf_counter_ns()
-        result = runner.execute(prepared, input_tensor, output_tensor=output_tensor)
-        torch.cuda.synchronize()
+        last_release = None
+        for iteration in range(args.iterations):
+            if iteration:
+                prepared = runner.prepare(
+                    build_two_phase_graph(
+                        rank,
+                        world_size,
+                        args.elements,
+                        barrier_id=101 + iteration,
+                        epoch_id=iteration,
+                    ),
+                    operation_name="ocs_phase_runner_smoke_rank{}_iter{}".format(rank, iteration),
+                )
+
+            result = runner.execute(prepared, input_tensor, output_tensor=output_tensor)
+            torch.cuda.synchronize()
+
+            if not torch.equal(result, input_tensor):
+                raise RuntimeError("phase runner output does not match this rank's input")
+            if len(runtime.history) != iteration + 1:
+                raise RuntimeError("expected one OCS barrier release per iteration")
+
+            release = runtime.history[-1]
+            if release["status"] != "OK" or release["barrier_id"] != 101 + iteration:
+                raise RuntimeError("unexpected OCS release: {}".format(release))
+            arrived_ranks = sorted(record["src_rank"] for record in release["ready_records"])
+            if arrived_ranks != list(range(world_size)):
+                raise RuntimeError("OCS release is missing READY records: {}".format(arrived_ranks))
+            prepared.close()
+            last_release = release
+
         report("phases_executed")
         elapsed_us = (time.perf_counter_ns() - started_ns) // 1000
-
-        if not torch.equal(result, input_tensor):
-            raise RuntimeError("phase runner output does not match this rank's input")
-        if len(runtime.history) != 1:
-            raise RuntimeError("expected exactly one OCS barrier release")
-
-        release = runtime.history[0]
-        if release["status"] != "OK" or release["barrier_id"] != 101:
-            raise RuntimeError("unexpected OCS release: {}".format(release))
-        arrived_ranks = sorted(record["src_rank"] for record in release["ready_records"])
-        if arrived_ranks != list(range(world_size)):
-            raise RuntimeError("OCS release is missing READY records: {}".format(arrived_ranks))
 
         dist.barrier()
         print(
@@ -178,15 +212,15 @@ def main() -> None:
                 {
                     "rank": rank,
                     "world_size": world_size,
+                    "iterations": args.iterations,
                     "phase_runner_elapsed_us": elapsed_us,
-                    "barrier_latency_us": release["latency_us"],
+                    "barrier_latency_us": last_release["latency_us"],
                     "ready_ranks": arrived_ranks,
                 },
                 sort_keys=True,
             ),
             flush=True,
         )
-        prepared.close()
     finally:
         if dist.is_initialized():
             report("process_group_destroying")

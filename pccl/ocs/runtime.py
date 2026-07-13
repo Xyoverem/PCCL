@@ -14,12 +14,16 @@ from .plan import OCSPlan
 
 
 CONSISTENCY_FIELDS = (
+    "job_id",
     "group_id",
     "barrier_id",
     "epoch_id",
+    "next_epoch_id",
     "topology_id",
+    "route_mode",
     "route_plan_id",
     "algorithm",
+    "backend",
 )
 
 
@@ -145,6 +149,9 @@ class OCSRuntime:
             src_rank = int(record.get("src_rank", -1))
             if src_rank not in expected_ranks:
                 continue
+            if src_rank in arrived:
+                raise OCSPlanMismatchError(
+                    f"duplicate READY from rank {src_rank} for barrier {plan.barrier_id}")
 
             arrived[src_rank] = record
             for field in CONSISTENCY_FIELDS:

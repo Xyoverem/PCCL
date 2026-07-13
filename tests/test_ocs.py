@@ -1,5 +1,6 @@
 """Tests for the OCS-aware runtime skeleton."""
 
+from dataclasses import replace
 import os
 import socket
 import sys
@@ -129,6 +130,49 @@ def test_barrier_switch_rejects_inconsistent_plans():
     runtime = OCSRuntime(connector=FakeConnector(records))
 
     with pytest.raises(OCSPlanMismatchError, match="topology_id"):
+        runtime.barrier_switch(plan)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("job_id", "different-job"),
+        ("next_epoch_id", 2),
+        ("route_mode", "USER_PLAN"),
+        ("backend", "pccl"),
+    ],
+)
+def test_barrier_switch_rejects_other_plan_identity_mismatches(field, value):
+    plan = OCSPlan(
+        job_id="job-a",
+        participant_ranks=(0, 1),
+        barrier_id=3,
+        epoch_id=0,
+        next_epoch_id=1,
+        route_mode="STATIC_PLAN",
+        backend="torch",
+    )
+    different = replace(plan, **{field: value})
+    records = [
+        plan.ready_record(src_rank=0, world_size=2),
+        different.ready_record(src_rank=1, world_size=2),
+    ]
+    runtime = OCSRuntime(connector=FakeConnector(records))
+
+    with pytest.raises(OCSPlanMismatchError, match=field):
+        runtime.barrier_switch(plan)
+
+
+def test_barrier_switch_rejects_duplicate_ready_rank():
+    plan = OCSPlan(participant_ranks=(0, 1), barrier_id=6)
+    records = [
+        plan.ready_record(src_rank=0, world_size=2),
+        plan.ready_record(src_rank=0, world_size=2),
+        plan.ready_record(src_rank=1, world_size=2),
+    ]
+    runtime = OCSRuntime(connector=FakeConnector(records))
+
+    with pytest.raises(OCSPlanMismatchError, match="duplicate READY"):
         runtime.barrier_switch(plan)
 
 

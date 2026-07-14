@@ -11,3 +11,7 @@ class OCSPlanMismatchError(OCSError):
 
 class OCSBarrierTimeout(OCSError):
     """Raised when not all expected ranks arrive at a barrier."""
+
+
+class OCSLinkNotReady(OCSError):
+    """Raised when an OCS switch completes without a link-aligned indication."""

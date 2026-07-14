@@ -1,11 +1,14 @@
 """OCS-aware runtime interfaces for PCCL experiments."""
 
 from .controller import OCSPlanController, StaticPlanController
-from .exceptions import OCSError, OCSBarrierTimeout, OCSPlanMismatchError
+from .exceptions import OCSError, OCSBarrierTimeout, OCSLinkNotReady, OCSPlanMismatchError
 from .phase_runner import OcsPhaseRunner, PreparedOcsGraph
 from .plan import OCSPlan
 from .runtime import (
     OCSRuntime,
+    OCSBarrierState,
+    OCSLinkState,
+    OCSSwitchResult,
     SwitchConnector,
     TorchDistributedSwitchConnector,
     ocs_all_reduce,
@@ -15,10 +18,14 @@ from .runtime import (
 __all__ = [
     "OCSError",
     "OCSBarrierTimeout",
+    "OCSLinkNotReady",
     "OCSPlan",
     "OCSPlanMismatchError",
     "OCSPlanController",
     "OCSRuntime",
+    "OCSBarrierState",
+    "OCSLinkState",
+    "OCSSwitchResult",
     "OcsPhaseRunner",
     "PreparedOcsGraph",
     "StaticPlanController",

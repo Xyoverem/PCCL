@@ -14,9 +14,13 @@ import torch.multiprocessing as mp
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pccl import (
+    OCSBarrierState,
+    OCSLinkNotReady,
+    OCSLinkState,
     OCSPlan,
     OCSPlanController,
     OCSRuntime,
+    OCSSwitchResult,
     StaticPlanController,
     SwitchConnector,
     TorchDistributedSwitchConnector,
@@ -27,13 +31,26 @@ import pccl.ocs.runtime as runtime_module
 
 
 class FakeConnector:
-    def __init__(self, records):
+    def __init__(self, records, switch_result=None):
         self.records = records
+        self.switch_result = switch_result
         self.calls = []
 
     def exchange_ready(self, ready_record, group=None, timeout=None):
         self.calls.append((ready_record, group, timeout))
         return self.records if self.records is not None else [ready_record]
+
+    def commit_switch(self, plan, ready_records, group=None, timeout=None):
+        self.calls.append(("commit_switch", plan.barrier_id, tuple(ready_records)))
+        if self.switch_result is not None:
+            return self.switch_result
+        now = runtime_module._time_us()
+        return OCSSwitchResult(
+            link_state=OCSLinkState.LINK_ALIGNED,
+            switch_start_time_us=now,
+            switch_done_time_us=now,
+            link_ready_time_us=now,
+        )
 
 
 class FakeRuntime:
@@ -131,7 +148,52 @@ def test_barrier_switch_releases_when_ready_records_match():
     assert release["barrier_id"] == 3
     assert release["topology_id"] == 7
     assert release["algorithm"] == "rhd"
+    assert release["link_state"] == "LINK_ALIGNED"
+    assert [event["state"] for event in release["state_trace"]] == [
+        OCSBarrierState.READY.value,
+        OCSBarrierState.ALL_ARRIVED.value,
+        OCSBarrierState.SWITCHING.value,
+        OCSBarrierState.WAIT_LINK_ALIGN.value,
+        OCSBarrierState.RELEASED.value,
+    ]
     assert len(runtime.history) == 1
+
+
+def test_barrier_switch_blocks_release_when_link_is_not_aligned():
+    plan = OCSPlan(participant_ranks=(0,), barrier_id=4)
+    result = OCSSwitchResult(
+        link_state=OCSLinkState.LINK_NOT_READY,
+        switch_start_time_us=10,
+        switch_done_time_us=11,
+        link_ready_time_us=None,
+        error_code=17,
+        error_message="alignment timeout",
+    )
+    runtime = OCSRuntime(connector=FakeConnector(None, switch_result=result))
+
+    with pytest.raises(OCSLinkNotReady, match="LINK_NOT_READY"):
+        runtime.barrier_switch(plan)
+
+    assert runtime.history[-1]["msg_type"] == "OCS_BARRIER_ABORT"
+    assert runtime.history[-1]["status"] == "LINK_NOT_READY"
+    assert runtime.history[-1]["error_code"] == 17
+    assert [event["state"] for event in runtime.history[-1]["state_trace"]][-1] == (
+        OCSBarrierState.FAILED.value
+    )
+
+
+def test_torch_connector_models_switch_then_link_ready_delay():
+    connector = TorchDistributedSwitchConnector(
+        switch_delay_s=0.001,
+        link_ready_delay_s=0.001,
+    )
+    runtime = OCSRuntime(connector=connector)
+
+    release = runtime.barrier_switch(OCSPlan(participant_ranks=(0,)))
+
+    assert release["switch_done_time_us"] >= release["switch_start_time_us"]
+    assert release["link_ready_time_us"] >= release["switch_done_time_us"]
+    assert release["link_state"] == OCSLinkState.LINK_ALIGNED.value
 
 
 def test_barrier_switch_rejects_inconsistent_plans():
@@ -259,10 +321,22 @@ def _gloo_worker(rank, world_size, port, queue):
 
     try:
         dist.init_process_group("gloo", rank=rank, world_size=world_size)
-        runtime = OCSRuntime(controller=StaticPlanController())
-        tensor = torch.tensor([float(rank + 1)])
-        ocs_all_reduce(tensor, runtime=runtime)
-        queue.put((rank, float(tensor.item()), len(runtime.history)))
+        runtime = OCSRuntime(
+            controller=StaticPlanController(),
+            connector=TorchDistributedSwitchConnector(
+                switch_delay_s=0.001,
+                link_ready_delay_s=0.001,
+            ),
+        )
+        for _ in range(3):
+            tensor = torch.tensor([float(rank + 1)])
+            ocs_all_reduce(tensor, runtime=runtime)
+            assert tensor.item() == 3.0
+        queue.put((
+            rank,
+            [release["barrier_id"] for release in runtime.history],
+            [release["link_state"] for release in runtime.history],
+        ))
     except Exception as exc:  # pragma: no cover - reported to parent process
         queue.put((rank, type(exc).__name__, str(exc)))
         raise
@@ -300,4 +374,7 @@ def test_ocs_all_reduce_cpu_gloo_2rank_smoke():
     assert all(proc.exitcode == 0 for proc in procs)
 
     results = [queue.get(timeout=5) for _ in range(world_size)]
-    assert sorted(results) == [(0, 3.0, 1), (1, 3.0, 1)]
+    assert sorted(results) == [
+        (0, [0, 1, 2], ["LINK_ALIGNED", "LINK_ALIGNED", "LINK_ALIGNED"]),
+        (1, [0, 1, 2], ["LINK_ALIGNED", "LINK_ALIGNED", "LINK_ALIGNED"]),
+    ]

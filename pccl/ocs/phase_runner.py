@@ -148,6 +148,8 @@ class OcsPhaseRunner:
                     phase_output = output_tensor
                 else:
                     phase_output = torch.empty_like(current_tensor)
+                # Engine.exeOp synchronizes its PCCL stream before returning, so the
+                # following host-control barrier cannot overtake this data phase.
                 self._engine().execute_operation(
                     operation_name, current_tensor, phase_output)
                 current_tensor = phase_output

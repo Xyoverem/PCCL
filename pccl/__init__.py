@@ -15,9 +15,10 @@ from .dsl import (
 from .ocs import (
     OCSError, OCSBarrierTimeout, OCSLinkNotReady, OCSPlan, OCSPlanMismatchError,
     OCSBarrierState, OCSLinkState, OCSPlanController, OCSRuntime, OCSSwitchResult,
-    OcsPhaseRunner, PreparedOcsGraph,
+    OCSCollectivePhase, OCSCollectivePlan, OcsCollectivePlanRunner, OcsPhaseRunner,
+    PreparedOcsCollectivePlan, PreparedOcsGraph,
     StaticPlanController, SwitchConnector, TorchDistributedSwitchConnector,
-    ocs_all_reduce, ocs_barrier_switch,
+    build_ring_allreduce_alltoall_plan, ocs_all_reduce, ocs_barrier_switch,
 )
 
 __all__ = [
@@ -32,7 +33,9 @@ __all__ = [
     "Compiler", "compile_to_json_string", "compile_to_json_file",
     "OCSError", "OCSBarrierTimeout", "OCSLinkNotReady", "OCSPlan", "OCSPlanMismatchError",
     "OCSBarrierState", "OCSLinkState", "OCSPlanController", "OCSRuntime",
-    "OCSSwitchResult", "OcsPhaseRunner", "PreparedOcsGraph",
+    "OCSSwitchResult", "OCSCollectivePhase", "OCSCollectivePlan",
+    "OcsCollectivePlanRunner", "OcsPhaseRunner", "PreparedOcsCollectivePlan",
+    "PreparedOcsGraph",
     "StaticPlanController", "SwitchConnector", "TorchDistributedSwitchConnector",
-    "ocs_all_reduce", "ocs_barrier_switch",
+    "build_ring_allreduce_alltoall_plan", "ocs_all_reduce", "ocs_barrier_switch",
 ]

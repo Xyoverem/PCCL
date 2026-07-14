@@ -15,3 +15,7 @@ class OCSBarrierTimeout(OCSError):
 
 class OCSLinkNotReady(OCSError):
     """Raised when an OCS switch completes without a link-aligned indication."""
+
+
+class OCSProtocolError(OCSError):
+    """Raised when an OCS control-plane wire message is invalid."""

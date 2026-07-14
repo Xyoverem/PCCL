@@ -8,7 +8,13 @@ from .collective_plan import (
     PreparedOcsCollectivePlan,
     build_ring_allreduce_alltoall_plan,
 )
-from .exceptions import OCSError, OCSBarrierTimeout, OCSLinkNotReady, OCSPlanMismatchError
+from .exceptions import (
+    OCSError,
+    OCSBarrierTimeout,
+    OCSLinkNotReady,
+    OCSPlanMismatchError,
+    OCSProtocolError,
+)
 from .phase_runner import OcsPhaseRunner, PreparedOcsGraph
 from .plan import OCSPlan
 from .runtime import (
@@ -27,11 +33,26 @@ from .torch_plan import (
     TorchCollectivePlan,
     build_torch_allreduce_alltoall_plan,
 )
+from .protocol import (
+    OCS_CONTROL_MAGIC,
+    OCS_CONTROL_MAX_PAYLOAD_BYTES,
+    OCS_CONTROL_VERSION,
+    OCSControlMessage,
+    OCSControlMessageKey,
+    OCSControlMessageType,
+    OCSControlStatus,
+    ack_target,
+    build_ack,
+    build_ready,
+    build_release,
+    plan_digest,
+)
 
 __all__ = [
     "OCSError",
     "OCSBarrierTimeout",
     "OCSLinkNotReady",
+    "OCSProtocolError",
     "OCSPlan",
     "OCSPlanMismatchError",
     "OCSPlanController",
@@ -53,6 +74,18 @@ __all__ = [
     "TorchCollectivePhase",
     "TorchCollectivePlan",
     "build_torch_allreduce_alltoall_plan",
+    "OCS_CONTROL_MAGIC",
+    "OCS_CONTROL_MAX_PAYLOAD_BYTES",
+    "OCS_CONTROL_VERSION",
+    "OCSControlMessage",
+    "OCSControlMessageKey",
+    "OCSControlMessageType",
+    "OCSControlStatus",
+    "ack_target",
+    "build_ack",
+    "build_ready",
+    "build_release",
     "ocs_all_reduce",
     "ocs_barrier_switch",
+    "plan_digest",
 ]

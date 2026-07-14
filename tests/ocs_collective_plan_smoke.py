@@ -64,6 +64,7 @@ def main() -> None:
 
         for iteration in range(args.iterations):
             first_barrier_id = 401 + iteration * 2
+            report("iteration_{}_preparing".format(iteration))
             prepared = runner.prepare(
                 build_ring_allreduce_alltoall_plan(
                     rank=rank,
@@ -76,11 +77,14 @@ def main() -> None:
                 ),
                 operation_name="ocs_collective_plan_rank{}_iter{}".format(rank, iteration),
             )
+            report("iteration_{}_prepared".format(iteration))
             input_tensor = torch.full(
                 (args.elements,), float(rank + 1), dtype=torch.float32, device="cuda")
             output_tensor = torch.empty_like(input_tensor)
+            report("iteration_{}_executing".format(iteration))
             result = runner.execute(prepared, input_tensor, output_tensor=output_tensor)
             torch.cuda.synchronize()
+            report("iteration_{}_executed".format(iteration))
 
             expected = torch.full_like(result, expected_value)
             if not torch.equal(result, expected):

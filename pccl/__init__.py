@@ -18,7 +18,9 @@ from .ocs import (
     OCSCollectivePhase, OCSCollectivePlan, OcsCollectivePlanRunner, OcsPhaseRunner,
     PreparedOcsCollectivePlan, PreparedOcsGraph,
     StaticPlanController, SwitchConnector, TorchDistributedSwitchConnector,
-    build_ring_allreduce_alltoall_plan, ocs_all_reduce, ocs_barrier_switch,
+    OcsTorchPlanRunner, TorchCollectivePhase, TorchCollectivePlan,
+    build_ring_allreduce_alltoall_plan, build_torch_allreduce_alltoall_plan,
+    ocs_all_reduce, ocs_barrier_switch,
 )
 
 __all__ = [
@@ -37,5 +39,7 @@ __all__ = [
     "OcsCollectivePlanRunner", "OcsPhaseRunner", "PreparedOcsCollectivePlan",
     "PreparedOcsGraph",
     "StaticPlanController", "SwitchConnector", "TorchDistributedSwitchConnector",
-    "build_ring_allreduce_alltoall_plan", "ocs_all_reduce", "ocs_barrier_switch",
+    "OcsTorchPlanRunner", "TorchCollectivePhase", "TorchCollectivePlan",
+    "build_ring_allreduce_alltoall_plan", "build_torch_allreduce_alltoall_plan",
+    "ocs_all_reduce", "ocs_barrier_switch",
 ]

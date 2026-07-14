@@ -21,6 +21,12 @@ from .runtime import (
     ocs_all_reduce,
     ocs_barrier_switch,
 )
+from .torch_plan import (
+    OcsTorchPlanRunner,
+    TorchCollectivePhase,
+    TorchCollectivePlan,
+    build_torch_allreduce_alltoall_plan,
+)
 
 __all__ = [
     "OCSError",
@@ -43,6 +49,10 @@ __all__ = [
     "SwitchConnector",
     "TorchDistributedSwitchConnector",
     "build_ring_allreduce_alltoall_plan",
+    "OcsTorchPlanRunner",
+    "TorchCollectivePhase",
+    "TorchCollectivePlan",
+    "build_torch_allreduce_alltoall_plan",
     "ocs_all_reduce",
     "ocs_barrier_switch",
 ]

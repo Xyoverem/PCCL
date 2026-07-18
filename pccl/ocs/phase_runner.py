@@ -21,9 +21,10 @@ from .runtime import OCSRuntime
 
 @dataclass
 class PreparedOcsGraph:
-    """Registered PCCL phase operations and their control barriers."""
+    """Materialized PCCL phase operations and their control barriers."""
 
     operation_names: Tuple[Optional[str], ...]
+    phase_files: Tuple[Optional[Path], ...]
     barriers_after_phase: Tuple[Optional[OCSPlan], ...]
     manifest: Dict[str, Any]
     json_dir: Path
@@ -63,7 +64,11 @@ class OcsPhaseRunner:
         graph: PrimitiveIRGraph,
         operation_name: Optional[str] = None,
     ) -> PreparedOcsGraph:
-        """Compile, materialize, and register every data phase in ``graph``."""
+        """Compile and materialize every data phase in ``graph``.
+
+        PCCL v0 uses one shared runtime workspace.  Deferring registration to
+        ``execute`` ensures that only the phase currently running owns it.
+        """
         compiled = self.compiler.compile(graph)
         manifest = RuntimeGraphGenerator().generate(compiled)
         if manifest.get("execution_model") != "phased_ocs":
@@ -77,6 +82,7 @@ class OcsPhaseRunner:
         json_dir, owns_json_dir = self._create_json_dir()
         base_name = operation_name or compiled.graph_id
         operation_names: List[Optional[str]] = []
+        phase_files: List[Optional[Path]] = []
         barriers: List[Optional[OCSPlan]] = []
 
         try:
@@ -86,6 +92,7 @@ class OcsPhaseRunner:
 
                 if not phase_manifest["operations"]:
                     operation_names.append(None)
+                    phase_files.append(None)
                     continue
 
                 phase_name = "{}_phase_{}".format(base_name, phase.index)
@@ -94,9 +101,8 @@ class OcsPhaseRunner:
                     json.dumps(self._to_runtime_v2(manifest, phase_manifest), indent=2),
                     encoding="utf-8",
                 )
-                if not self._engine().register_operation(phase_name, str(phase_file)):
-                    raise RuntimeError("failed to register OCS phase '{}'".format(phase_name))
                 operation_names.append(phase_name)
+                phase_files.append(phase_file)
         except Exception:
             if owns_json_dir:
                 shutil.rmtree(json_dir, ignore_errors=True)
@@ -104,6 +110,7 @@ class OcsPhaseRunner:
 
         return PreparedOcsGraph(
             operation_names=tuple(operation_names),
+            phase_files=tuple(phase_files),
             barriers_after_phase=tuple(barriers),
             manifest=manifest,
             json_dir=json_dir,
@@ -142,14 +149,20 @@ class OcsPhaseRunner:
 
         last_data_phase = data_phase_indices[-1]
         current_tensor = input_tensor
-        for phase_index, operation_name in enumerate(prepared.operation_names):
+        for phase_index, (operation_name, phase_file) in enumerate(
+                zip(prepared.operation_names, prepared.phase_files)):
             if operation_name is not None:
+                if phase_file is None:
+                    raise RuntimeError("data phase is missing its generated JSON")
                 if phase_index == last_data_phase and output_tensor is not None:
                     phase_output = output_tensor
                 else:
                     phase_output = torch.empty_like(current_tensor)
                 # Engine.exeOp synchronizes its PCCL stream before returning, so the
                 # following host-control barrier cannot overtake this data phase.
+                if not self._engine().register_operation(operation_name, str(phase_file)):
+                    raise RuntimeError("failed to register OCS phase '{}'".format(operation_name))
+                self._synchronize_phase_registration(group)
                 self._engine().execute_operation(
                     operation_name, current_tensor, phase_output)
                 current_tensor = phase_output
@@ -157,6 +170,8 @@ class OcsPhaseRunner:
             barrier = prepared.barriers_after_phase[phase_index]
             if barrier is not None:
                 self.runtime.barrier_switch(barrier, group=group, timeout=timeout)
+                if operation_name is not None:
+                    self._reset_signals(operation_name)
 
         return current_tensor
 
@@ -171,6 +186,17 @@ class OcsPhaseRunner:
             from .. import engine as pccl_engine
             self.engine = pccl_engine
         return self.engine
+
+    def _reset_signals(self, operation_name: str) -> None:
+        reset = getattr(self._engine(), "reset_signals", None)
+        if callable(reset):
+            reset(operation_name)
+
+    @staticmethod
+    def _synchronize_phase_registration(group: Optional[dist.ProcessGroup]) -> None:
+        """Align ranks after local ``regOp`` and before peer-signal traffic."""
+        if dist.is_initialized():
+            dist.barrier(group=group)
 
     @staticmethod
     def _to_runtime_v2(

@@ -55,9 +55,10 @@ class OCSCollectivePlan:
 
 @dataclass
 class PreparedOcsCollectivePlan:
-    """Registered PCCL operations for a concrete OCS collective plan."""
+    """Materialized PCCL operations for a concrete OCS collective plan."""
 
     operation_names: Tuple[str, ...]
+    phase_files: Tuple[Path, ...]
     barriers_after_phase: Tuple[Optional[OCSPlan], ...]
     collective_types: Tuple[str, ...]
     json_dir: Path
@@ -65,7 +66,7 @@ class PreparedOcsCollectivePlan:
     closed: bool = False
 
     def close(self) -> None:
-        """Remove generated JSON once all operations have been registered."""
+        """Remove generated JSON after plan execution is complete."""
         if not self.closed and self.owns_json_dir:
             shutil.rmtree(self.json_dir, ignore_errors=True)
         self.closed = True
@@ -91,9 +92,15 @@ class OcsCollectivePlanRunner:
         plan: OCSCollectivePlan,
         operation_name: str = "ocs_collective_plan",
     ) -> PreparedOcsCollectivePlan:
-        """Compile and register each collective as its own JSON v2 operation."""
+        """Compile and materialize each collective as a JSON v2 operation.
+
+        Registration is deliberately deferred until execution.  PCCL v0 maps
+        every registered operation to the same runtime buffer and signal
+        regions, so several live phase workspaces would alias each other.
+        """
         json_dir, owns_json_dir = self._create_json_dir()
         operation_names: List[str] = []
+        phase_files: List[Path] = []
         barriers: List[Optional[OCSPlan]] = []
         collective_types: List[str] = []
 
@@ -108,10 +115,9 @@ class OcsCollectivePlanRunner:
                 phase_name = f"{operation_name}_{index}_{phase.name}"
                 phase_file = json_dir / f"{phase_name}.json"
                 phase_file.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-                if not self._engine().register_operation(phase_name, str(phase_file)):
-                    raise RuntimeError(f"failed to register collective phase '{phase.name}'")
 
                 operation_names.append(phase_name)
+                phase_files.append(phase_file)
                 barriers.append(phase.barrier_after)
                 collective_types.append(phase.graph.collective_type)
         except Exception:
@@ -121,6 +127,7 @@ class OcsCollectivePlanRunner:
 
         return PreparedOcsCollectivePlan(
             operation_names=tuple(operation_names),
+            phase_files=tuple(phase_files),
             barriers_after_phase=tuple(barriers),
             collective_types=tuple(collective_types),
             json_dir=json_dir,
@@ -144,12 +151,16 @@ class OcsCollectivePlanRunner:
 
         current_tensor = input_tensor
         final_index = len(prepared.operation_names) - 1
-        for index, operation_name in enumerate(prepared.operation_names):
+        for index, (operation_name, phase_file) in enumerate(
+                zip(prepared.operation_names, prepared.phase_files)):
             if index == final_index and output_tensor is not None:
                 phase_output = output_tensor
             else:
                 phase_output = torch.empty_like(current_tensor)
 
+            if not self._engine().register_operation(operation_name, str(phase_file)):
+                raise RuntimeError(f"failed to register collective phase '{operation_name}'")
+            self._synchronize_phase_registration(group)
             self._engine().execute_operation(operation_name, current_tensor, phase_output)
             current_tensor = phase_output
 
@@ -176,6 +187,17 @@ class OcsCollectivePlanRunner:
         reset = getattr(self._engine(), "reset_signals", None)
         if callable(reset):
             reset(operation_name)
+
+    @staticmethod
+    def _synchronize_phase_registration(group: Optional[dist.ProcessGroup]) -> None:
+        """Align ranks after local ``regOp`` and before peer-signal traffic.
+
+        PCCL v0 has no distributed registration lifecycle.  Its static launch
+        path performs this fence explicitly, so phased execution must preserve
+        the same invariant until registration is moved into the engine.
+        """
+        if dist.is_initialized():
+            dist.barrier(group=group)
 
 
 def build_ring_allreduce_alltoall_plan(

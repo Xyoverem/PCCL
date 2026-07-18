@@ -10,6 +10,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pccl import DeviceType, OcsPhaseRunner, Stream, build_graph
+from pccl.ocs import phase_runner as phase_runner_module
 
 
 class RecordingEngine:
@@ -29,6 +30,9 @@ class RecordingEngine:
         output_tensor.copy_(input_tensor)
         output_tensor.add_(1 if name.endswith("phase_0") else 2)
         return output_tensor
+
+    def reset_signals(self, name):
+        self.events.append(("reset_signals", name))
 
 
 class RecordingRuntime:
@@ -62,7 +66,7 @@ def _build_two_phase_graph():
     return build_graph("phase_runner_graph", build, device=DeviceType.CUDA)
 
 
-def test_phase_runner_registers_json_v2_per_data_phase(tmp_path):
+def test_phase_runner_materializes_json_v2_per_data_phase(tmp_path):
     events = []
     engine = RecordingEngine(events)
     runtime = RecordingRuntime(events)
@@ -71,10 +75,13 @@ def test_phase_runner_registers_json_v2_per_data_phase(tmp_path):
     prepared = runner.prepare(_build_two_phase_graph(), operation_name="two_phase")
 
     assert prepared.operation_names == ("two_phase_phase_0", "two_phase_phase_1")
+    assert all(path is not None and path.exists() for path in prepared.phase_files)
     assert prepared.barriers_after_phase[0].barrier_id == 12
     assert prepared.barriers_after_phase[1] is None
-    assert list(engine.registered) == ["two_phase_phase_0", "two_phase_phase_1"]
-    for spec in engine.registered.values():
+    assert engine.registered == {}
+    for path in prepared.phase_files:
+        assert path is not None
+        spec = json.loads(path.read_text(encoding="utf-8"))
         assert spec["version"] == 2
         assert "operations" in spec
         assert all(op["primitive"] != "ocs.barrier" for op in spec["operations"])
@@ -94,12 +101,34 @@ def test_phase_runner_executes_data_then_barrier_then_next_phase(tmp_path):
     assert result.item() == 4.0
     assert events == [
         ("register", "ordered_phase_0"),
-        ("register", "ordered_phase_1"),
         ("execute", "ordered_phase_0", 1.0),
         ("barrier", 12, "ring"),
+        ("reset_signals", "ordered_phase_0"),
+        ("register", "ordered_phase_1"),
         ("execute", "ordered_phase_1", 2.0),
     ]
     assert runtime.plans[0].backend == "pccl"
+
+
+def test_phase_runner_fences_registration_before_execution(tmp_path, monkeypatch):
+    events = []
+    engine = RecordingEngine(events)
+    runtime = RecordingRuntime(events)
+    runner = OcsPhaseRunner(engine=engine, runtime=runtime, json_dir=str(tmp_path))
+    prepared = runner.prepare(_build_two_phase_graph(), operation_name="fenced")
+
+    monkeypatch.setattr(phase_runner_module.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(
+        phase_runner_module.dist, "barrier",
+        lambda group=None: events.append(("registration_fence", group)))
+
+    runner.execute(prepared, torch.tensor([1.0]))
+
+    assert events[:3] == [
+        ("register", "fenced_phase_0"),
+        ("registration_fence", None),
+        ("execute", "fenced_phase_0", 1.0),
+    ]
 
 
 def test_phase_runner_rejects_async_execution(tmp_path):

@@ -33,6 +33,15 @@ def _time_us() -> int:
     return time.time_ns() // 1000
 
 
+def _monotonic_ns() -> int:
+    """Return a process-local monotonic timestamp for latency accounting."""
+    return time.perf_counter_ns()
+
+
+def _duration_us(start_ns: int, end_ns: int) -> float:
+    return max(0.0, (int(end_ns) - int(start_ns)) / 1_000.0)
+
+
 def _dist_ready() -> bool:
     return dist.is_available() and dist.is_initialized()
 
@@ -73,6 +82,9 @@ class OCSSwitchResult:
     link_ready_time_us: Optional[int]
     error_code: int = 0
     error_message: str = ""
+    switch_start_mono_ns: Optional[int] = None
+    switch_done_mono_ns: Optional[int] = None
+    link_ready_mono_ns: Optional[int] = None
 
     @property
     def is_link_ready(self) -> bool:
@@ -113,12 +125,16 @@ class TorchDistributedSwitchConnector:
         switch_delay_s: float = 0.0,
         link_ready_delay_s: float = 0.0,
         link_ready: bool = True,
+        delay_mode: str = "sleep",
     ) -> None:
         if switch_delay_s < 0 or link_ready_delay_s < 0:
             raise ValueError("mock switch and link-ready delays must be non-negative")
+        if delay_mode not in {"sleep", "spin"}:
+            raise ValueError("delay_mode must be 'sleep' or 'spin'")
         self.switch_delay_s = float(switch_delay_s)
         self.link_ready_delay_s = float(link_ready_delay_s)
         self.link_ready = bool(link_ready)
+        self.delay_mode = delay_mode
 
     def exchange_ready(
         self,
@@ -144,18 +160,22 @@ class TorchDistributedSwitchConnector:
         del ready_records, timeout
 
         def simulate_commit() -> OCSSwitchResult:
+            switch_start_mono_ns = _monotonic_ns()
             switch_start_time_us = _time_us()
-            if self.switch_delay_s:
-                time.sleep(self.switch_delay_s)
+            self._wait_delay(self.switch_delay_s)
+            switch_done_mono_ns = _monotonic_ns()
             switch_done_time_us = _time_us()
-            if self.link_ready_delay_s:
-                time.sleep(self.link_ready_delay_s)
+            self._wait_delay(self.link_ready_delay_s)
             if self.link_ready:
+                link_ready_mono_ns = _monotonic_ns()
                 return OCSSwitchResult(
                     link_state=OCSLinkState.LINK_ALIGNED,
                     switch_start_time_us=switch_start_time_us,
                     switch_done_time_us=switch_done_time_us,
                     link_ready_time_us=_time_us(),
+                    switch_start_mono_ns=switch_start_mono_ns,
+                    switch_done_mono_ns=switch_done_mono_ns,
+                    link_ready_mono_ns=link_ready_mono_ns,
                 )
             return OCSSwitchResult(
                 link_state=OCSLinkState.LINK_NOT_READY,
@@ -164,6 +184,8 @@ class TorchDistributedSwitchConnector:
                 link_ready_time_us=None,
                 error_code=1,
                 error_message="mock link did not reach alignment",
+                switch_start_mono_ns=switch_start_mono_ns,
+                switch_done_mono_ns=switch_done_mono_ns,
             )
 
         if not _dist_ready():
@@ -179,6 +201,17 @@ class TorchDistributedSwitchConnector:
         if not isinstance(result, OCSSwitchResult):
             raise RuntimeError("switch connector did not broadcast an OCSSwitchResult")
         return result
+
+    def _wait_delay(self, delay_s: float) -> None:
+        if delay_s <= 0:
+            return
+        if self.delay_mode == "sleep":
+            time.sleep(delay_s)
+            return
+
+        deadline_ns = _monotonic_ns() + int(delay_s * 1_000_000_000)
+        while _monotonic_ns() < deadline_ns:
+            pass
 
 
 class OCSRuntime:
@@ -220,6 +253,7 @@ class OCSRuntime:
 
         arrive_seq = self._arrive_seq
         self._arrive_seq += 1
+        arrival_mono_ns = _monotonic_ns()
         arrival_time_us = _time_us()
         ready = normalized.ready_record(
             src_rank=rank,
@@ -230,16 +264,20 @@ class OCSRuntime:
 
         state_trace = [_state_event(OCSBarrierState.READY, arrival_time_us)]
         records = self.connector.exchange_ready(ready, group=group, timeout=timeout)
+        ready_exchange_done_mono_ns = _monotonic_ns()
         self._validate_ready_records(normalized, records)
+        ready_validation_done_mono_ns = _monotonic_ns()
         all_arrived_time_us = _time_us()
         state_trace.append(_state_event(OCSBarrierState.ALL_ARRIVED, all_arrived_time_us))
 
+        commit_start_mono_ns = _monotonic_ns()
         switch_result = self.connector.commit_switch(
             normalized,
             records,
             group=group,
             timeout=timeout,
         )
+        commit_done_mono_ns = _monotonic_ns()
         state_trace.append(
             _state_event(OCSBarrierState.SWITCHING, switch_result.switch_start_time_us))
         state_trace.append(
@@ -247,6 +285,7 @@ class OCSRuntime:
 
         if not switch_result.is_link_ready:
             failed_time_us = _time_us()
+            failed_mono_ns = _monotonic_ns()
             state_trace.append(_state_event(OCSBarrierState.FAILED, failed_time_us))
             self.history.append({
                 "msg_type": "OCS_BARRIER_ABORT",
@@ -263,6 +302,15 @@ class OCSRuntime:
                 "arrival_time_us": arrival_time_us,
                 "switch_start_time_us": switch_result.switch_start_time_us,
                 "switch_done_time_us": switch_result.switch_done_time_us,
+                "timing": self._latency_breakdown(
+                    arrival_mono_ns,
+                    ready_exchange_done_mono_ns,
+                    ready_validation_done_mono_ns,
+                    commit_start_mono_ns,
+                    commit_done_mono_ns,
+                    failed_mono_ns,
+                    switch_result,
+                ),
                 "state_trace": state_trace,
                 "ready_records": records,
             })
@@ -271,7 +319,17 @@ class OCSRuntime:
                 f"{switch_result.link_state.value}: {switch_result.error_message}")
 
         release_time_us = _time_us()
+        release_mono_ns = _monotonic_ns()
         state_trace.append(_state_event(OCSBarrierState.RELEASED, release_time_us))
+        timing = self._latency_breakdown(
+            arrival_mono_ns,
+            ready_exchange_done_mono_ns,
+            ready_validation_done_mono_ns,
+            commit_start_mono_ns,
+            commit_done_mono_ns,
+            release_mono_ns,
+            switch_result,
+        )
 
         release = {
             "msg_type": "OCS_BARRIER_RELEASE",
@@ -294,12 +352,73 @@ class OCSRuntime:
             "link_ready_time_us": switch_result.link_ready_time_us,
             "link_state": switch_result.link_state.value,
             "release_time_us": release_time_us,
-            "latency_us": release_time_us - arrival_time_us,
+            "latency_us": int(round(timing["total_us"])),
+            "timing": timing,
             "state_trace": state_trace,
             "ready_records": records,
         }
         self.history.append(release)
         return release
+
+    @staticmethod
+    def _latency_breakdown(
+        arrival_mono_ns: int,
+        ready_exchange_done_mono_ns: int,
+        ready_validation_done_mono_ns: int,
+        commit_start_mono_ns: int,
+        commit_done_mono_ns: int,
+        completion_mono_ns: int,
+        switch_result: OCSSwitchResult,
+    ) -> Dict[str, float]:
+        """Return local control-path timings plus controller-internal delays.
+
+        ``*_local_us`` and ``controller_commit_us`` are process-local monotonic
+        measurements. ``controller_switch_us`` and ``controller_link_align_us``
+        originate from the connector leader and are therefore reported
+        separately rather than summed into a cross-host timeline.
+        """
+        if (
+            switch_result.switch_start_mono_ns is not None
+            and switch_result.switch_done_mono_ns is not None
+        ):
+            controller_switch_us = _duration_us(
+                switch_result.switch_start_mono_ns,
+                switch_result.switch_done_mono_ns,
+            )
+        else:
+            controller_switch_us = max(
+                0.0,
+                float(switch_result.switch_done_time_us - switch_result.switch_start_time_us),
+            )
+
+        if (
+            switch_result.switch_done_mono_ns is not None
+            and switch_result.link_ready_mono_ns is not None
+        ):
+            controller_link_align_us = _duration_us(
+                switch_result.switch_done_mono_ns,
+                switch_result.link_ready_mono_ns,
+            )
+        elif switch_result.link_ready_time_us is not None:
+            controller_link_align_us = max(
+                0.0,
+                float(switch_result.link_ready_time_us - switch_result.switch_done_time_us),
+            )
+        else:
+            controller_link_align_us = 0.0
+
+        return {
+            "ready_exchange_us": _duration_us(
+                arrival_mono_ns, ready_exchange_done_mono_ns),
+            "ready_validation_us": _duration_us(
+                ready_exchange_done_mono_ns, ready_validation_done_mono_ns),
+            "controller_commit_us": _duration_us(
+                commit_start_mono_ns, commit_done_mono_ns),
+            "release_local_us": _duration_us(commit_done_mono_ns, completion_mono_ns),
+            "total_us": _duration_us(arrival_mono_ns, completion_mono_ns),
+            "controller_switch_us": controller_switch_us,
+            "controller_link_align_us": controller_link_align_us,
+        }
 
     def _validate_ready_records(
         self,

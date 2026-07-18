@@ -194,6 +194,45 @@ def test_torch_connector_models_switch_then_link_ready_delay():
     assert release["switch_done_time_us"] >= release["switch_start_time_us"]
     assert release["link_ready_time_us"] >= release["switch_done_time_us"]
     assert release["link_state"] == OCSLinkState.LINK_ALIGNED.value
+    assert release["timing"]["controller_switch_us"] > 0
+    assert release["timing"]["controller_link_align_us"] > 0
+
+
+def test_runtime_reports_monotonic_latency_breakdown():
+    plan = OCSPlan(participant_ranks=(0,), barrier_id=17)
+    result = OCSSwitchResult(
+        link_state=OCSLinkState.LINK_ALIGNED,
+        switch_start_time_us=10,
+        switch_done_time_us=13,
+        link_ready_time_us=17,
+        switch_start_mono_ns=100_000,
+        switch_done_mono_ns=103_000,
+        link_ready_mono_ns=107_000,
+    )
+    release = OCSRuntime(connector=FakeConnector(None, switch_result=result)).barrier_switch(plan)
+
+    assert release["latency_us"] == round(release["timing"]["total_us"])
+    assert release["timing"]["controller_switch_us"] == 3.0
+    assert release["timing"]["controller_link_align_us"] == 4.0
+    assert release["timing"]["ready_exchange_us"] >= 0
+    assert release["timing"]["controller_commit_us"] >= 0
+
+
+def test_torch_connector_accepts_spin_delay_mode():
+    connector = TorchDistributedSwitchConnector(
+        switch_delay_s=0.000_050,
+        link_ready_delay_s=0.000_050,
+        delay_mode="spin",
+    )
+    release = OCSRuntime(connector=connector).barrier_switch(OCSPlan(participant_ranks=(0,)))
+
+    assert release["timing"]["controller_switch_us"] >= 50.0
+    assert release["timing"]["controller_link_align_us"] >= 50.0
+
+
+def test_torch_connector_rejects_unknown_delay_mode():
+    with pytest.raises(ValueError, match="delay_mode"):
+        TorchDistributedSwitchConnector(delay_mode="unknown")
 
 
 def test_barrier_switch_rejects_inconsistent_plans():

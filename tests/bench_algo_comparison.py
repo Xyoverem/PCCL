@@ -15,6 +15,8 @@ Usage:
     python tests/bench_algo_comparison.py --nproc=8 --collective=allgather,alltoall
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json

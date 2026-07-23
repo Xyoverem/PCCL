@@ -11,9 +11,17 @@ from .collective_plan import (
 from .exceptions import (
     OCSError,
     OCSBarrierTimeout,
+    OCSExecutionPlanError,
     OCSLinkNotReady,
     OCSPlanMismatchError,
     OCSProtocolError,
+)
+from .execution_plan import (
+    OCS_EXECUTION_PLAN_VERSION,
+    OCSBarrierTransition,
+    OCSExecutionPhase,
+    OCSExecutionPlan,
+    OCSRoutePlanSpec,
 )
 from .phase_runner import OcsPhaseRunner, PreparedOcsGraph
 from .plan import OCSPlan
@@ -33,6 +41,7 @@ from .torch_plan import (
     TorchCollectivePlan,
     build_torch_allreduce_alltoall_plan,
 )
+from .plan_compiler import CompiledExecutionPlan, ExecutionPlanCompiler
 from .protocol import (
     OCS_CONTROL_MAGIC,
     OCS_CONTROL_MAX_PAYLOAD_BYTES,
@@ -51,10 +60,16 @@ from .protocol import (
 __all__ = [
     "OCSError",
     "OCSBarrierTimeout",
+    "OCSExecutionPlanError",
     "OCSLinkNotReady",
     "OCSProtocolError",
     "OCSPlan",
     "OCSPlanMismatchError",
+    "OCS_EXECUTION_PLAN_VERSION",
+    "OCSBarrierTransition",
+    "OCSExecutionPhase",
+    "OCSExecutionPlan",
+    "OCSRoutePlanSpec",
     "OCSPlanController",
     "OCSCollectivePhase",
     "OCSCollectivePlan",
@@ -74,6 +89,8 @@ __all__ = [
     "TorchCollectivePhase",
     "TorchCollectivePlan",
     "build_torch_allreduce_alltoall_plan",
+    "CompiledExecutionPlan",
+    "ExecutionPlanCompiler",
     "OCS_CONTROL_MAGIC",
     "OCS_CONTROL_MAX_PAYLOAD_BYTES",
     "OCS_CONTROL_VERSION",

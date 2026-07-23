@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ocs-pccl.local/schemas/ocs_execution_plan_v1.schema.json",
+  "title": "OCS-PCCL Execution Plan v1",
+  "description": "Controller/compiler contract for a multi-phase collective program with OCS transitions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "plan_id",
+    "group_id",
+    "rank_list",
+    "participant_bitmap",
+    "phases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ocs-pccl.execution-plan.v1"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "group_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rank_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "participant_bitmap": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]+$",
+      "description": "Lower-case hexadecimal bitmap derived from rank_list. Wire protocol v1 is limited to 64 ranks."
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    }
+  },
+  "$defs": {
+    "opType": {
+      "anyOf": [
+        {
+          "enum": [
+            "allreduce",
+            "alltoall",
+            "allgather",
+            "reducescatter",
+            "broadcast",
+            "reduce",
+            "custom"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^x-[a-z0-9][a-z0-9._-]*$"
+        }
+      ]
+    },
+    "algorithmType": {
+      "anyOf": [
+        {
+          "enum": [
+            "ring",
+            "rhd",
+            "tree",
+            "direct",
+            "hierarchical",
+            "auto",
+            "torch_native",
+            "custom"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^x-[a-z0-9][a-z0-9._-]*$"
+        }
+      ]
+    },
+    "routePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_plan_id",
+        "route_mode",
+        "source_topology_id",
+        "target_topology_id",
+        "payload"
+      ],
+      "properties": {
+        "route_plan_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "route_mode": {
+          "enum": ["STATIC_PLAN", "ID_ROUTE", "SEGMENT_ROUTE", "USER_PLAN"]
+        },
+        "source_topology_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target_topology_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "barrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barrier_id",
+        "next_epoch",
+        "next_phase_id",
+        "switch_action",
+        "route_plan"
+      ],
+      "properties": {
+        "barrier_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_phase_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "switch_action": {
+          "enum": ["KEEP", "APPLY_ROUTE"]
+        },
+        "route_plan": {
+          "oneOf": [
+            {"$ref": "#/$defs/routePlan"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "switch_action": {"const": "APPLY_ROUTE"}
+            }
+          },
+          "then": {
+            "properties": {
+              "route_plan": {"$ref": "#/$defs/routePlan"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "switch_action": {"const": "KEEP"}
+            }
+          },
+          "then": {
+            "properties": {
+              "route_plan": {"type": "null"}
+            }
+          }
+        }
+      ]
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase_id",
+        "epoch",
+        "op_type",
+        "algorithm_type",
+        "backend",
+        "topology_id",
+        "barrier_after"
+      ],
+      "properties": {
+        "phase_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "op_type": {
+          "$ref": "#/$defs/opType"
+        },
+        "algorithm_type": {
+          "$ref": "#/$defs/algorithmType"
+        },
+        "backend": {
+          "enum": ["pccl", "torch"]
+        },
+        "topology_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "artifact_id": {
+          "type": ["string", "null"]
+        },
+        "graph_digest": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "barrier_after": {
+          "oneOf": [
+            {"$ref": "#/$defs/barrier"},
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}

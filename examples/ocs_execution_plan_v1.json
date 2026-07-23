@@ -1,0 +1,85 @@
+{
+  "schema_version": "ocs-pccl.execution-plan.v1",
+  "job_id": "training-job-20260723",
+  "plan_id": "step-42-plan-0001",
+  "group_id": 0,
+  "rank_list": [0, 1, 2, 3],
+  "participant_bitmap": "0x000000000000000f",
+  "phases": [
+    {
+      "phase_id": 0,
+      "epoch": 100,
+      "op_type": "allreduce",
+      "algorithm_type": "ring",
+      "backend": "pccl",
+      "topology_id": 10,
+      "artifact_id": "pccl:ring-allreduce:4r:f32:v1",
+      "graph_digest": null,
+      "barrier_after": {
+        "barrier_id": 4200,
+        "next_epoch": 101,
+        "next_phase_id": 1,
+        "switch_action": "APPLY_ROUTE",
+        "route_plan": {
+          "route_plan_id": "route-4200",
+          "route_mode": "STATIC_PLAN",
+          "source_topology_id": 10,
+          "target_topology_id": 20,
+          "payload": {
+            "cross_connects": [[0, 1], [2, 3]]
+          }
+        }
+      }
+    },
+    {
+      "phase_id": 1,
+      "epoch": 101,
+      "op_type": "alltoall",
+      "algorithm_type": "direct",
+      "backend": "pccl",
+      "topology_id": 20,
+      "artifact_id": "pccl:direct-alltoall:4r:f32:v1",
+      "graph_digest": null,
+      "barrier_after": {
+        "barrier_id": 4201,
+        "next_epoch": 102,
+        "next_phase_id": 2,
+        "switch_action": "APPLY_ROUTE",
+        "route_plan": {
+          "route_plan_id": "route-4201",
+          "route_mode": "STATIC_PLAN",
+          "source_topology_id": 20,
+          "target_topology_id": 30,
+          "payload": {
+            "cross_connects": [[0, 2], [1, 3]]
+          }
+        }
+      }
+    },
+    {
+      "phase_id": 2,
+      "epoch": 102,
+      "op_type": "allreduce",
+      "algorithm_type": "tree",
+      "backend": "pccl",
+      "topology_id": 30,
+      "artifact_id": "pccl:tree-allreduce:4r:f32:v1",
+      "graph_digest": null,
+      "barrier_after": {
+        "barrier_id": 4202,
+        "next_epoch": 103,
+        "next_phase_id": 0,
+        "switch_action": "APPLY_ROUTE",
+        "route_plan": {
+          "route_plan_id": "route-4202",
+          "route_mode": "STATIC_PLAN",
+          "source_topology_id": 30,
+          "target_topology_id": 10,
+          "payload": {
+            "cross_connects": [[0, 3], [1, 2]]
+          }
+        }
+      }
+    }
+  ]
+}

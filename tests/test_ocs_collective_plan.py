@@ -55,8 +55,8 @@ class RecordingRuntime:
         return {"status": "OK", "link_state": "LINK_ALIGNED"}
 
 
-def _build_plan():
-    return build_ring_allreduce_alltoall_plan(
+def _build_plan(**kwargs):
+    params = dict(
         rank=0,
         world_size=2,
         tensor_size=8,
@@ -64,6 +64,8 @@ def _build_plan():
         first_barrier_id=41,
         first_epoch_id=7,
     )
+    params.update(kwargs)
+    return build_ring_allreduce_alltoall_plan(**params)
 
 
 def test_collective_plan_requires_barrier_between_phases():
@@ -75,6 +77,14 @@ def test_collective_plan_requires_barrier_between_phases():
             plan.phases[1],
             plan.phases[2],
         ))
+
+
+def test_collective_plan_supports_final_epoch_boundary():
+    plan = _build_plan(include_final_barrier=True)
+
+    assert [phase.barrier_after.barrier_id for phase in plan.phases] == [41, 42, 43]
+    assert [phase.barrier_after.epoch_id for phase in plan.phases] == [7, 8, 9]
+    assert [phase.barrier_after.next_epoch_id for phase in plan.phases] == [8, 9, 10]
 
 
 def test_collective_plan_materializes_per_phase_collective_types(tmp_path):
@@ -150,3 +160,25 @@ def test_collective_plan_fences_registration_before_execution(tmp_path, monkeypa
         ("registration_fence", None),
         ("execute", "fenced_0_allreduce_0", 1.0),
     ]
+
+
+def test_collective_plan_repeats_three_full_epochs_without_state_leak(tmp_path):
+    events = []
+    engine = RecordingEngine(events)
+    runtime = RecordingRuntime(events)
+    runner = OcsCollectivePlanRunner(engine=engine, runtime=runtime, json_dir=str(tmp_path))
+
+    for iteration in range(3):
+        first = iteration * 3
+        plan = _build_plan(
+            first_barrier_id=first,
+            first_epoch_id=first,
+            include_final_barrier=True,
+        )
+        prepared = runner.prepare(plan, operation_name=f"round_{iteration}")
+        runner.execute(prepared, torch.tensor([1.0]))
+
+    assert [plan.barrier_id for plan in runtime.plans] == list(range(9))
+    assert [plan.epoch_id for plan in runtime.plans] == list(range(9))
+    assert [plan.next_epoch_id for plan in runtime.plans] == list(range(1, 10))
+    assert len([event for event in events if event[0] == "reset_signals"]) == 9

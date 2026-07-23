@@ -39,15 +39,17 @@ class OCSCollectivePhase:
 
 @dataclass(frozen=True)
 class OCSCollectivePlan:
-    """A fixed sequence of collective graphs and intervening OCS barriers."""
+    """A fixed sequence of collective graphs and OCS phase boundaries.
+
+    A final barrier is optional and represents a commit into the next
+    epoch/iteration rather than an in-plan data phase.
+    """
 
     phases: Tuple[OCSCollectivePhase, ...]
 
     def __post_init__(self) -> None:
         if not self.phases:
             raise ValueError("OCS collective plan must contain at least one phase")
-        if self.phases[-1].barrier_after is not None:
-            raise ValueError("the final collective phase must not have a following barrier")
         for phase in self.phases[:-1]:
             if phase.barrier_after is None:
                 raise ValueError("every non-final collective phase requires an OCS barrier")
@@ -210,8 +212,13 @@ def build_ring_allreduce_alltoall_plan(
     group_id: int = 0,
     first_barrier_id: int = 0,
     first_epoch_id: int = 0,
+    include_final_barrier: bool = False,
 ) -> OCSCollectivePlan:
-    """Build ``AllReduce -> Barrier -> AllToAll -> Barrier -> AllReduce``."""
+    """Build a ring AllReduce/AllToAll/AllReduce phased plan.
+
+    ``include_final_barrier`` adds the phase-2 boundary that commits the next
+    epoch before another plan iteration starts.
+    """
     if world_size < 2:
         raise ValueError("the fixed collective plan requires at least two ranks")
     if tensor_size <= 0 or tensor_size % world_size:
@@ -249,5 +256,6 @@ def build_ring_allreduce_alltoall_plan(
         OCSCollectivePhase(
             name="allreduce_2",
             graph=ring.build_allreduce(rank, world_size, tensor_size, dtype, executor),
+            barrier_after=barrier(2, topology_id=0) if include_final_barrier else None,
         ),
     ))

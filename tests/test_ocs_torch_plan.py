@@ -44,6 +44,19 @@ def test_torch_collective_plan_requires_phase_boundaries():
         ))
 
 
+def test_torch_collective_plan_supports_final_epoch_boundary():
+    plan = build_torch_allreduce_alltoall_plan(
+        world_size=2,
+        first_barrier_id=20,
+        first_epoch_id=30,
+        include_final_barrier=True,
+    )
+
+    assert [phase.barrier_after.barrier_id for phase in plan.phases] == [20, 21, 22]
+    assert [phase.barrier_after.epoch_id for phase in plan.phases] == [30, 31, 32]
+    assert [phase.barrier_after.next_epoch_id for phase in plan.phases] == [31, 32, 33]
+
+
 def test_torch_collective_plan_orders_collectives_and_barriers(monkeypatch):
     events = []
     runtime = RecordingRuntime(events)
@@ -67,6 +80,7 @@ def test_torch_collective_plan_orders_collectives_and_barriers(monkeypatch):
             world_size=2,
             first_barrier_id=31,
             first_epoch_id=9,
+            include_final_barrier=True,
         ),
         torch.tensor([1.0]),
         output_tensor=output,
@@ -80,6 +94,7 @@ def test_torch_collective_plan_orders_collectives_and_barriers(monkeypatch):
         ("all_to_all_single", 2.0),
         ("barrier", 32, 10),
         ("all_reduce", 4.0),
+        ("barrier", 33, 11),
     ]
 
 
@@ -99,12 +114,13 @@ def _gloo_worker(rank, world_size, port, queue):
         dist.init_process_group("gloo", rank=rank, world_size=world_size)
         runtime = OCSRuntime()
         runner = OcsTorchPlanRunner(runtime=runtime)
-        for iteration in range(2):
+        for iteration in range(3):
             result = runner.execute(
                 build_torch_allreduce_alltoall_plan(
                     world_size=world_size,
-                    first_barrier_id=iteration * 2,
-                    first_epoch_id=iteration * 2,
+                    first_barrier_id=iteration * 3,
+                    first_epoch_id=iteration * 3,
+                    include_final_barrier=True,
                 ),
                 torch.full((4,), float(rank + 1)),
             )
@@ -150,6 +166,6 @@ def test_torch_collective_plan_cpu_gloo_2rank_multiepoch():
     assert all(proc.exitcode == 0 for proc in procs)
     results = [queue.get(timeout=5) for _ in range(world_size)]
     assert sorted(results) == [
-        (0, [0, 1, 2, 3], ["LINK_ALIGNED"] * 4),
-        (1, [0, 1, 2, 3], ["LINK_ALIGNED"] * 4),
+        (0, list(range(9)), ["LINK_ALIGNED"] * 9),
+        (1, list(range(9)), ["LINK_ALIGNED"] * 9),
     ]

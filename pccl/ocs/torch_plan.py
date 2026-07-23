@@ -31,15 +31,17 @@ class TorchCollectivePhase:
 
 @dataclass(frozen=True)
 class TorchCollectivePlan:
-    """A fixed torch collective sequence with OCS boundaries between phases."""
+    """A fixed torch collective sequence with OCS boundaries between phases.
+
+    Every non-final phase requires a barrier.  The final phase may also carry a
+    barrier when the plan commits the topology for the next epoch/iteration.
+    """
 
     phases: Tuple[TorchCollectivePhase, ...]
 
     def __post_init__(self) -> None:
         if not self.phases:
             raise ValueError("torch collective plan must contain at least one phase")
-        if self.phases[-1].barrier_after is not None:
-            raise ValueError("the final torch collective phase must not have a following barrier")
         for phase in self.phases[:-1]:
             if phase.barrier_after is None:
                 raise ValueError("every non-final torch collective phase requires an OCS barrier")
@@ -90,8 +92,13 @@ def build_torch_allreduce_alltoall_plan(
     group_id: int = 0,
     first_barrier_id: int = 0,
     first_epoch_id: int = 0,
+    include_final_barrier: bool = False,
 ) -> TorchCollectivePlan:
-    """Build ``AllReduce -> Barrier -> AllToAll -> Barrier -> AllReduce``."""
+    """Build an AllReduce/AllToAll/AllReduce phased plan.
+
+    ``include_final_barrier`` adds the phase-2 boundary that commits the next
+    epoch before another plan iteration starts.
+    """
     if world_size < 2:
         raise ValueError("the fixed torch collective plan requires at least two ranks")
 
@@ -115,5 +122,8 @@ def build_torch_allreduce_alltoall_plan(
     return TorchCollectivePlan(phases=(
         TorchCollectivePhase("all_reduce", barrier_after=barrier(0, topology_id=1)),
         TorchCollectivePhase("all_to_all_single", barrier_after=barrier(1, topology_id=2)),
-        TorchCollectivePhase("all_reduce"),
+        TorchCollectivePhase(
+            "all_reduce",
+            barrier_after=barrier(2, topology_id=0) if include_final_barrier else None,
+        ),
     ))

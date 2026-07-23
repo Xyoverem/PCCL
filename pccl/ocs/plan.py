@@ -7,7 +7,16 @@ from typing import Any, Dict, Iterable, Tuple
 import time
 
 
-SUPPORTED_ALGORITHMS = {"ring", "rhd", "tree", "auto", "torch_native"}
+SUPPORTED_ALGORITHMS = {
+    "ring",
+    "rhd",
+    "tree",
+    "direct",
+    "hierarchical",
+    "auto",
+    "torch_native",
+    "custom",
+}
 SUPPORTED_BACKENDS = {"torch", "pccl"}
 KNOWN_ROUTE_MODES = {"STATIC_PLAN", "ID_ROUTE", "SEGMENT_ROUTE", "USER_PLAN"}
 

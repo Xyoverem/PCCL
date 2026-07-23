@@ -64,7 +64,10 @@ class ReduceOp(Enum):
 
 
 VALID_DTYPES = {"float32", "float16", "bfloat16", "float8_e4m3", "float8_e5m2"}
-OCS_ALGORITHMS = {"ring", "rhd", "tree", "auto", "torch_native"}
+OCS_ALGORITHMS = {
+    "ring", "rhd", "tree", "direct", "hierarchical", "auto",
+    "torch_native", "custom",
+}
 OCS_BACKENDS = {"torch", "pccl"}
 OCS_ROUTE_MODES = {"STATIC_PLAN", "ID_ROUTE", "SEGMENT_ROUTE", "USER_PLAN"}
 

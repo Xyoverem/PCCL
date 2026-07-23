@@ -64,6 +64,9 @@ _ALGORITHM_TO_ID = {
     "tree": 3,
     "auto": 4,
     "torch_native": 5,
+    "direct": 6,
+    "hierarchical": 7,
+    "custom": 8,
 }
 _ALGORITHM_FROM_ID = {value: key for key, value in _ALGORITHM_TO_ID.items()}
 _BACKEND_TO_ID = {"torch": 1, "pccl": 2}

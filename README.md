@@ -126,7 +126,35 @@ python tests/bench_algo_comparison.py
 
 ## 文档
 
-更多详细信息请查看 `docs/` 目录。
+- [OCS-PCCL Execution Plan Schema v1](docs/OCS_EXECUTION_PLAN_SCHEMA_V1.md)
+- [机器可读 JSON Schema](schemas/ocs_execution_plan_v1.schema.json)
+- [三 phase、三 barrier 示例](examples/ocs_execution_plan_v1.json)
+- [MSCCL 风格 Algorithm IR v1](docs/ALGORITHM_IR_V1.md)
+
+Execution Plan 可以直接编译为现有 PCCL/Torch phase runner 使用的计划：
+
+```python
+from pccl import OCSExecutionPlan, ExecutionPlanCompiler
+
+plan = OCSExecutionPlan.load("examples/ocs_execution_plan_v1.json")
+compiled = ExecutionPlanCompiler().compile(
+    plan, rank=0, tensor_size=4096, dtype="float32", executor="sm"
+)
+```
+
+实验性自动算法生成模式：
+
+```python
+compiler = ExecutionPlanCompiler(algorithm_lowering="generated")
+```
+
+生成路径与原手写模板的数据面 A/B：
+
+```bash
+bash tests/run_algorithm_ir_ab.sh --warmup 20 --iterations 100 --repeats 5
+```
+
+计时只覆盖已注册 graph 的 `execute_operation_async + sync_operation`；完整设计、正确性和双 A5000 结果见 [Algorithm IR v1](docs/ALGORITHM_IR_V1.md)。
 
 ## 许可证
 

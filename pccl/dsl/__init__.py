@@ -24,6 +24,19 @@ from .nodes import (
 from .graph import OcsPhase, PrimitiveIRGraph
 from .decorators import build_graph, Stream, CommunicationOp
 from .pipeline import Pipeline
+from .algorithm_ir import (
+    AlgorithmBuffer,
+    AlgorithmIRBuilder,
+    AlgorithmIRError,
+    AlgorithmIRLowerer,
+    AlgorithmPrimitive,
+    AlgorithmStep,
+    AlgorithmStepBuilder,
+    AlgorithmSync,
+    AlgorithmTransfer,
+    ChunkRef,
+    CollectiveAlgorithmIR,
+)
 from .compiler import (
     Compiler,
     compile_to_json_string,
@@ -40,6 +53,10 @@ __all__ = [
     "NotifyNode", "WaitNotifyNode", "OcsBarrierNode",
     "OcsPhase", "PrimitiveIRGraph",
     "build_graph", "Stream", "CommunicationOp", "Pipeline",
+    "AlgorithmBuffer", "AlgorithmIRBuilder", "AlgorithmIRError",
+    "AlgorithmIRLowerer", "AlgorithmPrimitive", "AlgorithmStep",
+    "AlgorithmStepBuilder", "AlgorithmSync", "AlgorithmTransfer",
+    "ChunkRef", "CollectiveAlgorithmIR",
     "Compiler", "compile_to_json_string", "compile_to_json_file",
     "discover_rules", "load_rules",
 ]

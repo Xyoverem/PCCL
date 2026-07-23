@@ -19,3 +19,7 @@ class OCSLinkNotReady(OCSError):
 
 class OCSProtocolError(OCSError):
     """Raised when an OCS control-plane wire message is invalid."""
+
+
+class OCSExecutionPlanError(OCSError):
+    """Raised when an Execution Plan cannot be parsed or validated."""

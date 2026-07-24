@@ -166,10 +166,11 @@ compiled = compiler.compile(
 生成路径与原手写模板的数据面 A/B：
 
 ```bash
-bash tests/run_algorithm_ir_ab.sh --warmup 20 --iterations 100 --repeats 5
+bash tests/run_algorithm_ir_ab.sh --modes template,generated,msccl \
+  --warmup 20 --iterations 100 --repeats 5
 ```
 
-计时只覆盖已注册 graph 的 `execute_operation_async + sync_operation`；完整设计、正确性和双 A5000 结果见 [Algorithm IR v1](docs/ALGORITHM_IR_V1.md)。
+MSCCL-tools 默认融合 XML 的 `rcs/rrs/rrcs` 已支持。计时只覆盖已注册 graph 的 `execute_operation_async + sync_operation`；完整设计、兼容限制、正确性和双 A5000 结果见 [MSCCL 兼容接口](docs/MSCCL_COMPATIBILITY.md)。
 
 ## 许可证
 

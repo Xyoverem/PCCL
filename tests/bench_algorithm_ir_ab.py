@@ -1,4 +1,4 @@
-"""A/B benchmark for hand-written PCCL templates and generated Algorithm IR.
+"""A/B benchmark for template, generated, and imported MSCCL schedules.
 
 The timed region contains only PCCL data-plane execution:
 ``execute_operation_async`` followed by ``sync_operation``.  Graph building,
@@ -24,7 +24,7 @@ import torch.distributed as dist
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pccl import compile_to_json_file
+from pccl import MSCCLXMLAlgorithm, compile_to_json_file
 from pccl.dsl.algorithms import AlgorithmIRCollectives, RingAllreduce
 from pccl.engine import (
     execute_operation_async,
@@ -36,7 +36,7 @@ from pccl.engine import (
 )
 
 
-MODES = ("template", "generated")
+MODES = ("template", "generated", "msccl")
 COLLECTIVES = ("allreduce", "alltoall")
 
 
@@ -65,6 +65,22 @@ def _build_graph(
     tensor_size: int,
     executor: str,
 ):
+    if mode == "msccl":
+        if world_size != 2:
+            raise ValueError("MSCCL benchmark fixtures currently require world_size=2")
+        fixture_dir = Path(__file__).parent / "fixtures"
+        filename = (
+            "msccl_ring_allreduce_2_fused.xml"
+            if collective == "allreduce"
+            else "msccl_direct_alltoall_2.xml"
+        )
+        return MSCCLXMLAlgorithm.load(fixture_dir / filename).lower(
+            rank=rank,
+            tensor_size=tensor_size,
+            dtype="float32",
+            executor=executor,
+        )
+
     algorithm = RingAllreduce() if mode == "template" else AlgorithmIRCollectives()
     builder = getattr(algorithm, "build_{}".format(collective))
     return builder(
@@ -129,6 +145,7 @@ def _bench_case(
     iterations: int,
     repeats: int,
     output_dir: Path,
+    modes: List[str],
 ) -> Dict[str, object]:
     element_count = data_bytes // torch.tensor([], dtype=torch.float32).element_size()
     element_count = (element_count // world_size) * world_size
@@ -137,7 +154,7 @@ def _bench_case(
     actual_bytes = element_count * 4
 
     operation_names: Dict[str, str] = {}
-    for mode in MODES:
+    for mode in modes:
         operation_name = "alg_ir_ab_{}_{}_{}b_{}".format(collective, mode, actual_bytes, rank)
         graph = _build_graph(mode, collective, rank, world_size, element_count, executor)
         json_file = output_dir / "{}_rank{}.json".format(operation_name, rank)
@@ -154,38 +171,47 @@ def _bench_case(
     else:
         # Equal values make both local and remote all-to-all slots directly checkable.
         input_tensor = torch.ones(element_count, dtype=torch.float32, device="cuda")
-    outputs = {mode: torch.empty_like(input_tensor) for mode in MODES}
+    outputs = {mode: torch.empty_like(input_tensor) for mode in modes}
 
-    for mode in MODES:
+    for mode in modes:
         _run_once(operation_names[mode], input_tensor, outputs[mode])
         _check_output(collective, outputs[mode], world_size)
         for _ in range(warmup):
             _run_once(operation_names[mode], input_tensor, outputs[mode])
 
-    samples: Dict[str, List[float]] = {mode: [] for mode in MODES}
+    samples: Dict[str, List[float]] = {mode: [] for mode in modes}
     for repeat in range(repeats):
         # Reverse order every repeat to reduce thermal and first-run bias.
-        order = MODES if repeat % 2 == 0 else tuple(reversed(MODES))
+        order = modes if repeat % 2 == 0 else tuple(reversed(modes))
         for mode in order:
             samples[mode].append(
                 _measure(operation_names[mode], input_tensor, outputs[mode], iterations)
             )
 
-    for mode in MODES:
+    for mode in modes:
         reset_signals(operation_names[mode])
     dist.barrier()
 
-    medians = {mode: statistics.median(samples[mode]) for mode in MODES}
-    return {
+    medians = {mode: statistics.median(samples[mode]) for mode in modes}
+    result = {
         "collective": collective,
         "data_bytes": actual_bytes,
         "executor": executor,
         "iterations": iterations,
+        "modes": modes,
         "repeats": repeats,
         "latency_us": medians,
         "samples_us": samples,
-        "generated_over_template": medians["generated"] / medians["template"],
     }
+    if "template" in medians:
+        result["relative_to_template"] = {
+            mode: medians[mode] / medians["template"] for mode in modes if mode != "template"
+        }
+        if "generated" in medians:
+            result["generated_over_template"] = medians["generated"] / medians["template"]
+        if "msccl" in medians:
+            result["msccl_over_template"] = medians["msccl"] / medians["template"]
+    return result
 
 
 def main() -> None:
@@ -200,6 +226,11 @@ def main() -> None:
         "--collectives",
         type=lambda value: _parse_csv_choices(value, COLLECTIVES),
         default=list(COLLECTIVES),
+    )
+    parser.add_argument(
+        "--modes",
+        type=lambda value: _parse_csv_choices(value, MODES),
+        default=list(MODES),
     )
     parser.add_argument("--executor", choices=("sm", "tma"), default="sm")
     parser.add_argument("--warmup", type=int, default=20)
@@ -218,6 +249,8 @@ def main() -> None:
     world_size = int(os.environ["WORLD_SIZE"])
     if world_size < 2:
         parser.error("the A/B benchmark requires at least two ranks")
+    if "msccl" in args.modes and world_size != 2:
+        parser.error("MSCCL benchmark fixtures currently require WORLD_SIZE=2")
 
     os.environ.setdefault("PCCL_DISABLE_FUSED", "1")
     torch.cuda.set_device(local_rank)
@@ -244,6 +277,7 @@ def main() -> None:
                     iterations=args.iterations,
                     repeats=args.repeats,
                     output_dir=output_dir,
+                    modes=args.modes,
                 )
                 if rank == 0:
                     results.append(case)
@@ -254,6 +288,7 @@ def main() -> None:
                 "world_size": world_size,
                 "device": torch.cuda.get_device_name(local_rank),
                 "fused_disabled": os.environ.get("PCCL_DISABLE_FUSED") == "1",
+                "modes": args.modes,
                 "timed_region": "execute_operation_async + sync_operation",
                 "results": results,
             }

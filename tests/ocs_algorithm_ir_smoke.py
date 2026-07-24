@@ -102,7 +102,7 @@ def main():
         runner = OcsCollectivePlanRunner(runtime=runtime)
         fixture_dir = Path(__file__).parent / "fixtures"
         artifacts = {
-            "msccl:ring2": fixture_dir / "msccl_ring_allreduce_2.xml",
+            "msccl:ring2": fixture_dir / "msccl_ring_allreduce_2_fused.xml",
             "msccl:direct-a2a-2": fixture_dir / "msccl_direct_alltoall_2.xml",
         }
         compiler = ExecutionPlanCompiler(

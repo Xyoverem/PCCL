@@ -35,13 +35,31 @@ class MSCCLBuffer(str, Enum):
 class MSCCLStepType(str, Enum):
     SEND = "s"
     RECV = "r"
+    RECV_COPY_SEND = "rcs"
+    RECV_REDUCE_SEND = "rrs"
     RECV_REDUCE_COPY = "rrc"
+    RECV_REDUCE_COPY_SEND = "rrcs"
     COPY = "cpy"
     REDUCE = "re"
     NOP = "nop"
 
 
-_FUSED_STEP_TYPES = {"rcs", "rrs", "rrcs"}
+_FUSED_STEP_TYPES = {
+    MSCCLStepType.RECV_COPY_SEND,
+    MSCCLStepType.RECV_REDUCE_SEND,
+    MSCCLStepType.RECV_REDUCE_COPY_SEND,
+}
+_RECV_STEP_TYPES = {
+    MSCCLStepType.RECV,
+    MSCCLStepType.RECV_REDUCE_COPY,
+    *_FUSED_STEP_TYPES,
+}
+_SEND_STEP_TYPES = {MSCCLStepType.SEND, *_FUSED_STEP_TYPES}
+_RECV_REDUCE_STEP_TYPES = {
+    MSCCLStepType.RECV_REDUCE_COPY,
+    MSCCLStepType.RECV_REDUCE_SEND,
+    MSCCLStepType.RECV_REDUCE_COPY_SEND,
+}
 _PROTOCOLS = {"Simple", "LL", "LL128"}
 _MAX_SIGNALS = 4096
 
@@ -195,12 +213,6 @@ class MSCCLXMLAlgorithm:
                     step_id = _int_attr(step_node, "s", tb_path + ".step", minimum=0)
                     step_path = "{}.step[{}]".format(tb_path, step_id)
                     raw_type = _required_attr(step_node, "type", step_path)
-                    if raw_type in _FUSED_STEP_TYPES:
-                        raise MSCCLCompatibilityError(
-                            "{} uses fused MSCCL instruction {!r}; regenerate the schedule "
-                            "with MSCCLProgram(..., instr_fusion=False) so PCCL can preserve "
-                            "buffer and dependency semantics".format(step_path, raw_type)
-                        )
                     try:
                         op_type = MSCCLStepType(raw_type)
                     except ValueError as exc:
@@ -374,11 +386,35 @@ class MSCCLXMLAlgorithm:
         if step.src_offset < 0 or step.dst_offset < 0:
             raise MSCCLCompatibilityError("{} requires non-negative offsets".format(path))
 
+        if step.op_type in _FUSED_STEP_TYPES:
+            if tb.recv_peer < 0 or tb.send_peer < 0:
+                raise MSCCLCompatibilityError(
+                    "{} fused receive/send requires both tb.recv and tb.send peers".format(path)
+                )
+            self._validate_chunk_range(
+                self.gpus[tb.recv_peer],
+                step.src_buffer,
+                step.src_offset,
+                step.count,
+                path + ".incoming_src",
+            )
+            for dst_gpu, suffix in (
+                (gpu, ".local_dst"),
+                (self.gpus[tb.send_peer], ".outgoing_dst"),
+            ):
+                self._validate_chunk_range(
+                    dst_gpu,
+                    step.dst_buffer,
+                    step.dst_offset,
+                    step.count,
+                    path + suffix,
+                )
+            return
         if step.op_type is MSCCLStepType.SEND:
             if tb.send_peer < 0:
                 raise MSCCLCompatibilityError("{} send has no tb.send peer".format(path))
             src_gpu, dst_gpu = gpu, self.gpus[tb.send_peer]
-        elif step.op_type in {MSCCLStepType.RECV, MSCCLStepType.RECV_REDUCE_COPY}:
+        elif step.op_type in _RECV_STEP_TYPES:
             if tb.recv_peer < 0:
                 raise MSCCLCompatibilityError("{} receive has no tb.recv peer".format(path))
             src_gpu, dst_gpu = self.gpus[tb.recv_peer], gpu
@@ -438,23 +474,32 @@ class MSCCLXMLAlgorithm:
         for key in dependencies:
             visit(key)
 
-    def _pair_transfers(self) -> Dict[MSCCLStepKey, MSCCLStepKey]:
+    def _pair_transfers(self) -> Tuple[Tuple[MSCCLStepKey, MSCCLStepKey], ...]:
         sends: DefaultDict[Tuple[object, ...], List[MSCCLStepKey]] = defaultdict(list)
         receives: DefaultDict[Tuple[object, ...], List[MSCCLStepKey]] = defaultdict(list)
         for gpu in self.gpus:
             for tb in gpu.threadblocks:
                 for step in tb.steps:
-                    if step.op_type is MSCCLStepType.SEND:
-                        transfer = self._transfer_key(gpu.rank, tb.send_peer, tb.channel, step)
+                    if step.op_type in _SEND_STEP_TYPES:
+                        if step.op_type in _FUSED_STEP_TYPES:
+                            transfer = self._transfer_key_fields(
+                                gpu.rank,
+                                tb.send_peer,
+                                tb.channel,
+                                step.dst_buffer,
+                                step.dst_offset,
+                                step.dst_buffer,
+                                step.dst_offset,
+                                step.count,
+                            )
+                        else:
+                            transfer = self._transfer_key(gpu.rank, tb.send_peer, tb.channel, step)
                         sends[transfer].append(step.key)
-                    elif step.op_type in {
-                        MSCCLStepType.RECV,
-                        MSCCLStepType.RECV_REDUCE_COPY,
-                    }:
+                    if step.op_type in _RECV_STEP_TYPES:
                         transfer = self._transfer_key(tb.recv_peer, gpu.rank, tb.channel, step)
                         receives[transfer].append(step.key)
 
-        pairs: Dict[MSCCLStepKey, MSCCLStepKey] = {}
+        pairs: List[Tuple[MSCCLStepKey, MSCCLStepKey]] = []
         for transfer in sorted(set(sends).union(receives)):
             send_keys = sorted(sends.get(transfer, ()))
             recv_keys = sorted(receives.get(transfer, ()))
@@ -465,9 +510,8 @@ class MSCCLXMLAlgorithm:
                     )
                 )
             for send_key, recv_key in zip(send_keys, recv_keys):
-                pairs[send_key] = recv_key
-                pairs[recv_key] = send_key
-        return pairs
+                pairs.append((send_key, recv_key))
+        return tuple(pairs)
 
     @staticmethod
     def _transfer_key(
@@ -476,15 +520,37 @@ class MSCCLXMLAlgorithm:
         channel: int,
         step: MSCCLXMLStep,
     ) -> Tuple[object, ...]:
+        return MSCCLXMLAlgorithm._transfer_key_fields(
+            source_rank,
+            target_rank,
+            channel,
+            step.src_buffer,
+            step.src_offset,
+            step.dst_buffer,
+            step.dst_offset,
+            step.count,
+        )
+
+    @staticmethod
+    def _transfer_key_fields(
+        source_rank: int,
+        target_rank: int,
+        channel: int,
+        src_buffer: Optional[MSCCLBuffer],
+        src_offset: int,
+        dst_buffer: Optional[MSCCLBuffer],
+        dst_offset: int,
+        count: int,
+    ) -> Tuple[object, ...]:
         return (
             source_rank,
             target_rank,
             channel,
-            step.src_buffer.value if step.src_buffer else "",
-            step.src_offset,
-            step.dst_buffer.value if step.dst_buffer else "",
-            step.dst_offset,
-            step.count,
+            src_buffer.value if src_buffer else "",
+            src_offset,
+            dst_buffer.value if dst_buffer else "",
+            dst_offset,
+            count,
         )
 
     def matches_collective(self, op_type: str) -> bool:
@@ -547,15 +613,15 @@ class MSCCLXMLAlgorithm:
         if _normalize_collective(self.collective) == "alltoall":
             self._validate_pccl_alltoall_layout()
 
-        pair_map = self._pair_transfers()
-        signal_by_step: Dict[MSCCLStepKey, int] = {}
-        send_keys = sorted(key for key, peer in pair_map.items() if key < peer)
-        if signal_base + len(send_keys) > _MAX_SIGNALS:
+        transfer_pairs = self._pair_transfers()
+        send_signal_by_step: Dict[MSCCLStepKey, int] = {}
+        recv_signal_by_step: Dict[MSCCLStepKey, int] = {}
+        if signal_base + len(transfer_pairs) > _MAX_SIGNALS:
             raise MSCCLCompatibilityError("MSCCL schedule exceeds PCCL signal workspace")
-        for offset, key in enumerate(send_keys):
+        for offset, (send_key, recv_key) in enumerate(transfer_pairs):
             signal = signal_base + offset
-            signal_by_step[key] = signal
-            signal_by_step[pair_map[key]] = signal
+            send_signal_by_step[send_key] = signal
+            recv_signal_by_step[recv_key] = signal
 
         chunk_size = tensor_size // self.chunks_per_loop
         refs: Dict[MSCCLStepKey, Tuple[IRNode, IRNode]] = {}
@@ -583,7 +649,8 @@ class MSCCLXMLAlgorithm:
                             op,
                             tb,
                             step,
-                            signal_by_step,
+                            send_signal_by_step,
+                            recv_signal_by_step,
                             rank,
                             tensor_size,
                             chunk_size,
@@ -607,20 +674,21 @@ class MSCCLXMLAlgorithm:
         op: CommunicationOp,
         tb: MSCCLXMLThreadblock,
         step: MSCCLXMLStep,
-        signal_by_step: Mapping[MSCCLStepKey, int],
+        send_signal_by_step: Mapping[MSCCLStepKey, int],
+        recv_signal_by_step: Mapping[MSCCLStepKey, int],
         rank: int,
         tensor_size: int,
         chunk_size: int,
         executor: str,
     ) -> Tuple[IRNode, IRNode]:
         if step.op_type is MSCCLStepType.NOP:
-            node = op.noop()
-            return node, node
+            noop = op.noop()
+            return noop, noop
         if step.op_type is MSCCLStepType.SEND:
-            node = op.notify(signal_id=signal_by_step[step.key], target_rank=tb.send_peer)
-            return node, node
-        if step.op_type in {MSCCLStepType.RECV, MSCCLStepType.RECV_REDUCE_COPY}:
-            wait = op.wait_notify(signal_id=signal_by_step[step.key], source_rank=tb.recv_peer)
+            notify = op.notify(signal_id=send_signal_by_step[step.key], target_rank=tb.send_peer)
+            return notify, notify
+        if step.op_type in _RECV_STEP_TYPES:
+            wait = op.wait_notify(signal_id=recv_signal_by_step[step.key], source_rank=tb.recv_peer)
             data = self._lower_data_step(
                 op,
                 step,
@@ -629,9 +697,14 @@ class MSCCLXMLAlgorithm:
                 tensor_size=tensor_size,
                 chunk_size=chunk_size,
                 executor=executor,
-                reduce=step.op_type is MSCCLStepType.RECV_REDUCE_COPY,
+                reduce=step.op_type in _RECV_REDUCE_STEP_TYPES,
                 remote_receive=True,
             )
+            if step.op_type in _FUSED_STEP_TYPES:
+                notify = op.notify(
+                    signal_id=send_signal_by_step[step.key], target_rank=tb.send_peer
+                )
+                return wait, notify
             return wait, data
 
         data = self._lower_data_step(

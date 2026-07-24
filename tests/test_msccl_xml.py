@@ -1,6 +1,7 @@
 """MSCCL XML compatibility boundary and Execution Plan integration tests."""
 
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -19,6 +20,8 @@ from pccl.dsl.codegen import RuntimeGraphGenerator
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RING = FIXTURES / "msccl_ring_allreduce_2.xml"
+FUSED_RING = FIXTURES / "msccl_ring_allreduce_2_fused.xml"
+FUSED_RING_4 = FIXTURES / "msccl_ring_allreduce_4_fused.xml"
 ALLTOALL = FIXTURES / "msccl_direct_alltoall_2.xml"
 
 
@@ -178,10 +181,136 @@ def test_direct_alltoall_maps_msccl_output_buffer_to_pccl_scratch_layout():
     assert local_copies[0].src_offset == local_copies[0].dst_offset == 0
 
 
-def test_fused_instruction_requires_unfused_msccl_artifact():
-    xml = RING.read_text(encoding="utf-8").replace('type="rrc"', 'type="rrcs"', 1)
+def test_official_fused_ring_is_decomposed_with_matched_signals():
+    algorithm = MSCCLXMLAlgorithm.load(FUSED_RING)
+    graphs = [
+        algorithm.lower(rank, tensor_size=1024, dtype="float32", executor="sm") for rank in range(2)
+    ]
 
-    with pytest.raises(MSCCLCompatibilityError, match="instr_fusion=False"):
+    assert algorithm.gpus[0].threadblocks[0].steps[1].op_type is (
+        MSCCLStepType.RECV_REDUCE_COPY_SEND
+    )
+    sends = {
+        (rank, node.target_rank, node.signal_id)
+        for rank, graph in enumerate(graphs)
+        for node in graph.nodes.values()
+        if node.op_type is PrimitiveOpType.NOTIFY
+    }
+    receives = {
+        (node.source_rank, rank, node.signal_id)
+        for rank, graph in enumerate(graphs)
+        for node in graph.nodes.values()
+        if node.op_type is PrimitiveOpType.WAIT_NOTIFY
+    }
+    assert sends == receives
+    assert all(graph.size() == 6 for graph in graphs)
+    assert all(len(graph.get_nodes_by_type(PrimitiveOpType.SM_REDUCE)) == 1 for graph in graphs)
+
+
+def test_official_four_rank_fused_ring_covers_all_pipeline_instructions():
+    algorithm = MSCCLXMLAlgorithm.load(FUSED_RING_4)
+    graphs = [
+        algorithm.lower(rank, tensor_size=1024, dtype="float32", executor="sm") for rank in range(4)
+    ]
+
+    fused_types = {
+        step.op_type
+        for gpu in algorithm.gpus
+        for threadblock in gpu.threadblocks
+        for step in threadblock.steps
+        if step.op_type
+        in {
+            MSCCLStepType.RECV_COPY_SEND,
+            MSCCLStepType.RECV_REDUCE_SEND,
+            MSCCLStepType.RECV_REDUCE_COPY_SEND,
+        }
+    }
+    assert fused_types == {
+        MSCCLStepType.RECV_COPY_SEND,
+        MSCCLStepType.RECV_REDUCE_SEND,
+        MSCCLStepType.RECV_REDUCE_COPY_SEND,
+    }
+
+    sends = {
+        (rank, node.target_rank, node.signal_id)
+        for rank, graph in enumerate(graphs)
+        for node in graph.nodes.values()
+        if node.op_type is PrimitiveOpType.NOTIFY
+    }
+    receives = {
+        (node.source_rank, rank, node.signal_id)
+        for rank, graph in enumerate(graphs)
+        for node in graph.nodes.values()
+        if node.op_type is PrimitiveOpType.WAIT_NOTIFY
+    }
+    assert sends == receives
+    assert all(graph.size() == 18 for graph in graphs)
+    assert all(len(graph.get_nodes_by_type(PrimitiveOpType.SM_REDUCE)) == 3 for graph in graphs)
+    assert all(len(graph.get_nodes_by_type(PrimitiveOpType.SM_COPY)) == 3 for graph in graphs)
+
+
+@pytest.mark.parametrize(
+    "instruction, data_primitive",
+    [
+        ("rcs", PrimitiveOpType.SM_COPY),
+        ("rrs", PrimitiveOpType.SM_REDUCE),
+        ("rrcs", PrimitiveOpType.SM_REDUCE),
+    ],
+)
+def test_fused_pipeline_instructions_lower_to_wait_data_notify(instruction, data_primitive):
+    xml = """
+    <algo name="fused_pipeline" proto="Simple" nchannels="1"
+          nchunksperloop="1" ngpus="3" coll="custom" inplace="1">
+      <gpu id="0" i_chunks="1" o_chunks="0" s_chunks="0">
+        <tb id="0" send="1" recv="-1" chan="0">
+          <step s="0" type="s" srcbuf="i" srcoff="0" dstbuf="i" dstoff="0"
+                cnt="1" depid="-1" deps="-1" hasdep="0"/>
+        </tb>
+      </gpu>
+      <gpu id="1" i_chunks="1" o_chunks="0" s_chunks="0">
+        <tb id="0" send="2" recv="0" chan="0">
+          <step s="0" type="{instruction}" srcbuf="i" srcoff="0"
+                dstbuf="i" dstoff="0" cnt="1" depid="-1" deps="-1"
+                hasdep="0"/>
+        </tb>
+      </gpu>
+      <gpu id="2" i_chunks="1" o_chunks="0" s_chunks="0">
+        <tb id="0" send="-1" recv="1" chan="0">
+          <step s="0" type="r" srcbuf="i" srcoff="0" dstbuf="i" dstoff="0"
+                cnt="1" depid="-1" deps="-1" hasdep="0"/>
+        </tb>
+      </gpu>
+    </algo>
+    """.format(
+        instruction=instruction
+    )
+    algorithm = MSCCLXMLAlgorithm.from_xml(xml)
+    middle = algorithm.lower(rank=1, tensor_size=16, dtype="float32", executor="sm")
+
+    assert [node.op_type for node in middle.topological_sort()] == [
+        PrimitiveOpType.WAIT_NOTIFY,
+        data_primitive,
+        PrimitiveOpType.NOTIFY,
+    ]
+
+
+def test_fused_instruction_requires_both_threadblock_peers():
+    root = ElementTree.parse(FUSED_RING).getroot()
+    threadblock = root.find("./gpu[@id='0']/tb")
+    assert threadblock is not None
+    threadblock.set("send", "-1")
+    first_step = threadblock.find("./step[@s='0']")
+    assert first_step is not None
+    first_step.attrib = {
+        "s": "0",
+        "type": "nop",
+        "depid": "-1",
+        "deps": "-1",
+        "hasdep": "0",
+    }
+    xml = ElementTree.tostring(root, encoding="unicode")
+
+    with pytest.raises(MSCCLCompatibilityError, match="requires both"):
         MSCCLXMLAlgorithm.from_xml(xml)
 
 

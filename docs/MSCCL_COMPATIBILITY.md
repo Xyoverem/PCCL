@@ -1,6 +1,6 @@
 # MSCCL Schedule 兼容接口
 
-更新时间：2026-07-24 13:58 +08:00
+更新时间：2026-07-24 17:53 +08:00
 
 ## 1. 分层与边界
 
@@ -44,13 +44,14 @@ program = MSCCLProgram(
     name,
     topology,
     collective,
+    instances=1,
     protocol="Simple",
-    instr_fusion=False,
+    instr_fusion=True,
 )
-program.XML()
+xml = program.generate_xml()
 ```
 
-必须使用 `instr_fusion=False`。`rcs/rrs/rrcs` 已丢失一部分中间 buffer/依赖边界，当前 importer 不猜测恢复，PCCL 可以在生成 Primitive IR 后自行执行 fusion pass。
+Importer 接受 MSCCL-tools 默认生成的融合 XML，不再要求 `instr_fusion=False`。当前接口接收 runtime 使用的 old-format `algo/gpu/tb/step` XML，执行协议必须为 `Simple`；`LL/LL128` 只解析元数据，不进入 PCCL lowering。
 
 ## 3. MSCCL XML 映射
 
@@ -69,15 +70,20 @@ algo(name, proto, nchannels, nchunksperloop, ngpus, coll, inplace)
 | `s` | `notify(target_rank, signal_id)` |
 | `r` | `wait_notify(source_rank, signal_id)` + `copy` |
 | `rrc` | `wait_notify(source_rank, signal_id)` + `reduce` |
+| `rcs` | `wait_notify` + `copy` + `notify` |
+| `rrs` | `wait_notify` + `reduce` + `notify` |
+| `rrcs` | `wait_notify` + `reduce` + `notify` |
 | `cpy` | local `copy` |
 | `re` | local `reduce` |
 | `nop` | executable `noop`，保留依赖位置 |
 | TB 内 step 顺序 | 同一 PCCL stream 的顺序依赖 |
 | `depid/deps` | 跨 stream DAG edge |
 | `chan` | Primitive IR channel |
-| matched `s/r` | 相同 `signal_id` |
+| matched send/receive endpoint | 相同 `signal_id` |
 
 Importer 校验 GPU/TB/step id、buffer chunk 边界、peer/channel、依赖引用和环、send/recv 数量与字段匹配。XML 内容归一化后计算 SHA-256 digest，空白变化不影响 artifact identity。
+
+融合 step 同时是上一个传输的 receive endpoint 和下一个传输的 send endpoint，因此分别分配 incoming/outgoing signal。`rrs` 在 MSCCL 中允许结果被后续 receive 覆盖，`rrcs` 保留本地 copy；当前 PCCL primitive model 都先把 reduce 结果写到本地目标 slot 再 notify。该展开保持 collective 结果和依赖语义，但可能多一次本地写入，不等同于 MSCCL runtime 的单条融合指令。PCCL engine 仍可优化展开后的 graph。
 
 ## 4. PCCL 接口
 
@@ -174,12 +180,12 @@ MSCCL 的 `depid/deps` 是单个 collective 内的 device dependency；OCS barri
 | 能力 | 状态 |
 |---|---|
 | 标准 `algo/gpu/tb/step` 解析 | 已实现 |
-| `s/r/rrc/cpy/re/nop` | 已实现 |
+| `s/r/rrc/rcs/rrs/rrcs/cpy/re/nop` | 已实现 |
 | `depid/deps`、channel、send/recv matching | 已实现 |
 | `Simple` protocol lowering | 已实现 |
 | `LL/LL128` 元数据解析 | 已实现，执行时拒绝 |
-| `rcs/rrs/rrcs` fused step | 拒绝，要求 `instr_fusion=False` |
-| Ring AllReduce 标准 XML | CPU 测试及双 RTX A5000 engine smoke 通过 |
+| `rcs/rrs/rrcs` fused step | 展开为 wait + data + notify；语义兼容 |
+| Ring AllReduce 标准 XML | 2/4-rank 官方 fixture；双 RTX A5000 engine smoke 通过 |
 | Direct AllToAll 标准 XML | CPU 测试及双 RTX A5000 engine smoke 通过 |
 | 通用 MSCCL AllToAll output layout | 尚未实现 |
 | MSCCL XML 内 OCS switch | 不支持，设计上放在 Execution Plan |
@@ -188,14 +194,32 @@ MSCCL 的 `depid/deps` 是单个 collective 内的 device dependency；OCS barri
 
 ## 7. 验证
 
-- 官方格式 2-rank Ring AllReduce fixture。
+- 官方格式 2-rank unfused/fused Ring AllReduce fixture。
+- 官方生成的 4-rank fused Ring AllReduce fixture，同时覆盖 `rcs/rrs/rrcs`。
 - 官方格式 2-rank Direct AllToAll fixture。
 - XML metadata、digest、buffer/peer/channel、依赖环、unmatched transfer 负例。
 - send/recv signal 配对、跨 TB dependency、Runtime JSON v2 编译。
 - `AllReduce -> barrier -> AllToAll -> barrier -> AllReduce -> barrier` 三 phase Execution Plan 导入。
-- 本机全量回归：`313 passed`。
+- 本机全量回归：`318 passed`。
 - 服务器 `121.48.163.223` 双 RTX A5000：3 轮真实 C++ engine smoke 通过，累计 9 phase/9 barrier；两 rank 结果均正确，barrier id 为 `0..8`。
 
 首次 GPU smoke 暴露了一个 runtime 适配问题：MSCCL threadblock 语义为并发，但 PCCL executor 使用 JSON 插入顺序打破并列 DAG root；官方 XML 先列 receive-TB 时，阻塞 wait 会先于独立 notify。Importer 现在先发射 send-capable TB，仅改变无依赖 root 的 tie-break 顺序，不改变 TB 内顺序或 `depid/deps`。修复后单轮和三轮 smoke 均通过。
 
-本轮尚未完成 `msccl` importer 与 `generated/template` 的数据面 A/B；此前性能数据不能直接作为 importer 性能结果。
+### 三路径数据面 A/B
+
+2026-07-24 在双 RTX A5000 上对 `template/generated/msccl` 做同进程交错测试。每个 case 预热 20 次、连续执行 100 次、重复 5 轮并取中位数；计时区间只有已注册 graph 的 `execute_operation_async + sync_operation`，不包含 XML 解析、lowering、注册、OCS barrier 或控制器。
+
+关闭 PCCL engine fusion：
+
+| collective | payload | template | generated | msccl | msccl/template |
+|---|---:|---:|---:|---:|---:|
+| AllReduce | 1 MiB | 215.35 us | 215.21 us | 215.55 us | 1.0009x |
+| AllReduce | 16 MiB | 2572.56 us | 2576.54 us | 2571.30 us | 0.9995x |
+| AllReduce | 64 MiB | 9935.56 us | 9934.29 us | 9932.00 us | 0.9996x |
+| AllToAll | 1 MiB | 125.49 us | 125.40 us | 125.51 us | 1.0001x |
+| AllToAll | 16 MiB | 1387.76 us | 1387.59 us | 1387.36 us | 0.9997x |
+| AllToAll | 64 MiB | 5308.44 us | 5312.03 us | 5307.90 us | 0.9999x |
+
+MSCCL 相对 template 的最大绝对偏差约 `0.095%`。启用 engine fusion 后 6 个 case 的比值为 `0.9908x..1.0017x`；最大偏差出现在 1 MiB AllReduce，绝对差约 `1.99 us`，其余大消息 case 接近。当前证据表明 XML importer 不在数据面热路径增加 Python 开销；结果不代表不同算法本身性能相同，因为三条路径在这些 fixture 上 lower 为等价 primitive DAG，也不包含 OCS 切换时延。
+
+原始结果：[`msccl_three_path_ab_unfused.json`](../results/msccl_three_path_ab_unfused.json)、[`msccl_three_path_ab_fused.json`](../results/msccl_three_path_ab_fused.json)。

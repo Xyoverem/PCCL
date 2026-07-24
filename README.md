@@ -130,6 +130,7 @@ python tests/bench_algo_comparison.py
 - [机器可读 JSON Schema](schemas/ocs_execution_plan_v1.schema.json)
 - [三 phase、三 barrier 示例](examples/ocs_execution_plan_v1.json)
 - [MSCCL 风格 Algorithm IR v1](docs/ALGORITHM_IR_V1.md)
+- [MSCCL XML schedule 兼容接口](docs/MSCCL_COMPATIBILITY.md)
 
 Execution Plan 可以直接编译为现有 PCCL/Torch phase runner 使用的计划：
 
@@ -147,6 +148,20 @@ compiled = ExecutionPlanCompiler().compile(
 ```python
 compiler = ExecutionPlanCompiler(algorithm_lowering="generated")
 ```
+
+AICCL/RLCCL 等上层生成器输出标准 MSCCL XML 时：
+
+```python
+compiler = ExecutionPlanCompiler(
+    algorithm_lowering="msccl",
+    artifact_resolver=artifact_store.__getitem__,
+)
+compiled = compiler.compile(
+    plan, rank=0, tensor_size=4096, dtype="float32", executor="sm"
+)
+```
+
+`artifact_id` 引用 collective schedule；OCS topology、epoch 和 barrier 由外层 Execution Plan 描述。
 
 生成路径与原手写模板的数据面 A/B：
 

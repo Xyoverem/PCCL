@@ -1,6 +1,6 @@
 # PCCL Algorithm IR v1
 
-更新时间：2026-07-23 22:47 +08:00
+更新时间：2026-07-24 13:58 +08:00
 
 ## 1. 接口位置
 
@@ -24,6 +24,8 @@ PCCL JSON v2 / CUDA engine
 ```
 
 Execution Plan 决定执行什么和何时切换；Algorithm IR 描述 collective 的硬件无关数据流；Primitive IR 才选择 SM、TMA、RDMA 等执行器。OCS barrier 是 phase 间 host-control boundary，不进入单个 collective 的 Algorithm IR。
+
+该 Algorithm IR 是 PCCL 内部算法生成接口。AICCL/RLCCL 等上层生成器的公开兼容边界已固定为标准 MSCCL XML，由 [`MSCCLXMLAlgorithm`](MSCCL_COMPATIBILITY.md) 导入；上层不需要改写为 `AlgorithmIRBuilder`。
 
 ## 2. 数据模型
 
@@ -133,6 +135,17 @@ compiled = compiler.compile(
 
 不支持的组合明确报错，不静默回退到手写模板。
 
+外部生成器输出标准 MSCCL XML 时使用：
+
+```python
+compiler = ExecutionPlanCompiler(
+    algorithm_lowering="msccl",
+    artifact_resolver=artifact_store.__getitem__,
+)
+```
+
+`phase.artifact_id` 指向 XML schedule；phase/barrier/topology/route plan 仍由 OCS Execution Plan 描述。完整契约见 [`MSCCL_COMPATIBILITY.md`](MSCCL_COMPATIBILITY.md)。
+
 ## 7. 验证结果
 
 ### 正确性
@@ -141,6 +154,7 @@ compiled = compiler.compile(
 - 独立语义解释器验证 2/4/8 rank Ring AllReduce 和 Direct AllToAll。
 - 2 张 RTX A5000 的测试服务器上，手写模板与生成模式均通过 3 轮真实 PCCL C++ engine 测试：每轮执行 `AllReduce -> barrier -> AllToAll -> barrier -> AllReduce -> barrier`，累计 9 个 phase、9 个新 barrier/epoch，最终结果与 barrier 序列均正确。
 - 发布前审计新增并行 step 读写同一 chunk 的冲突检查，以及 `world_size/signal_base` 等公开参数的严格整数类型检查；新核心模块通过 Black、Flake8 和 Mypy，Execution Plan 示例通过 JSON Schema Draft 2020-12 正例与负例验证。远端 Algorithm IR/Execution Plan 专项为 `36 passed`，更新代码后的 generated GPU smoke 再次通过。
+- 2026-07-24 新增标准 MSCCL XML importer 后，本机全量回归更新为 `313 passed`；14:14 +08:00 在双 RTX A5000 上通过 3 轮真实 C++ engine smoke，共执行 9 phase/9 barrier。尚未完成 importer 三路径性能 A/B。
 
 ### 数据面 A/B
 

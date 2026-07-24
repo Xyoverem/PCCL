@@ -41,7 +41,12 @@ from .torch_plan import (
     TorchCollectivePlan,
     build_torch_allreduce_alltoall_plan,
 )
-from .plan_compiler import CompiledExecutionPlan, ExecutionPlanCompiler
+from .plan_compiler import (
+    CompiledExecutionPlan,
+    ExecutionPlanCompiler,
+    MSCCLArtifact,
+    MSCCLArtifactResolver,
+)
 from .protocol import (
     OCS_CONTROL_MAGIC,
     OCS_CONTROL_MAX_PAYLOAD_BYTES,
@@ -91,6 +96,8 @@ __all__ = [
     "build_torch_allreduce_alltoall_plan",
     "CompiledExecutionPlan",
     "ExecutionPlanCompiler",
+    "MSCCLArtifact",
+    "MSCCLArtifactResolver",
     "OCS_CONTROL_MAGIC",
     "OCS_CONTROL_MAX_PAYLOAD_BYTES",
     "OCS_CONTROL_VERSION",

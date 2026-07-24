@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from os import PathLike
 from typing import Callable, List, Optional, Tuple, Union, cast
 
 from ..dsl.algorithms import (
@@ -16,6 +17,7 @@ from ..dsl.algorithms.base import CollectiveAlgorithm
 from ..dsl.codegen import RuntimeGraphGenerator
 from ..dsl.compiler import Compiler
 from ..dsl.graph import PrimitiveIRGraph
+from ..dsl.msccl_xml import MSCCLCompatibilityError, MSCCLXMLAlgorithm
 from .collective_plan import OCSCollectivePhase, OCSCollectivePlan
 from .exceptions import OCSExecutionPlanError
 from .execution_plan import OCSExecutionPhase, OCSExecutionPlan
@@ -23,6 +25,8 @@ from .torch_plan import TorchCollectivePhase, TorchCollectivePlan
 
 
 CompiledExecutionPlan = Union[OCSCollectivePlan, TorchCollectivePlan]
+MSCCLArtifact = Union[MSCCLXMLAlgorithm, str, bytes, PathLike]
+MSCCLArtifactResolver = Callable[[str], MSCCLArtifact]
 
 _DTYPE_BYTES = {
     "float32": 4,
@@ -51,10 +55,15 @@ class ExecutionPlanCompiler:
     tensor size, dtype, executor, and channel count to create PCCL artifacts.
     """
 
-    def __init__(self, algorithm_lowering: str = "template") -> None:
-        if algorithm_lowering not in {"template", "generated"}:
-            raise ValueError("algorithm_lowering must be 'template' or 'generated'")
+    def __init__(
+        self,
+        algorithm_lowering: str = "template",
+        artifact_resolver: Optional[MSCCLArtifactResolver] = None,
+    ) -> None:
+        if algorithm_lowering not in {"template", "generated", "msccl"}:
+            raise ValueError("algorithm_lowering must be 'template', 'generated', or 'msccl'")
         self.algorithm_lowering = algorithm_lowering
+        self.artifact_resolver = artifact_resolver
 
     def compile(
         self,
@@ -136,7 +145,9 @@ class ExecutionPlanCompiler:
             raise OCSExecutionPlanError("unsupported dtype {!r}".format(dtype))
         if isinstance(num_channels, bool) or not isinstance(num_channels, int) or num_channels <= 0:
             raise OCSExecutionPlanError("num_channels must be a positive integer")
-        if tensor_size % (len(plan.rank_list) * num_channels):
+        if self.algorithm_lowering != "msccl" and tensor_size % (
+            len(plan.rank_list) * num_channels
+        ):
             raise OCSExecutionPlanError(
                 "tensor_size must be divisible by world_size * num_channels"
             )
@@ -191,6 +202,15 @@ class ExecutionPlanCompiler:
         executor: str,
         num_channels: int,
     ) -> Tuple[PrimitiveIRGraph, str]:
+        if self.algorithm_lowering == "msccl":
+            return self._build_msccl_graph(
+                phase,
+                local_rank=local_rank,
+                world_size=world_size,
+                tensor_size=tensor_size,
+                dtype=dtype,
+                executor=executor,
+            )
         if self.algorithm_lowering == "generated":
             return self._build_generated_graph(
                 phase,
@@ -292,6 +312,50 @@ class ExecutionPlanCompiler:
                 phase.phase_id, phase.op_type, phase.algorithm_type
             )
         )
+
+    def _build_msccl_graph(
+        self,
+        phase: OCSExecutionPhase,
+        local_rank: int,
+        world_size: int,
+        tensor_size: int,
+        dtype: str,
+        executor: str,
+    ) -> Tuple[PrimitiveIRGraph, str]:
+        if phase.artifact_id is None:
+            raise OCSExecutionPlanError(
+                "phase {} requires artifact_id for MSCCL lowering".format(phase.phase_id)
+            )
+        if self.artifact_resolver is None:
+            raise OCSExecutionPlanError("MSCCL lowering requires an artifact_resolver")
+        try:
+            artifact = self.artifact_resolver(phase.artifact_id)
+            algorithm = MSCCLXMLAlgorithm.resolve(artifact)
+            if algorithm.num_gpus != world_size:
+                raise MSCCLCompatibilityError(
+                    "MSCCL ngpus={} does not match plan group size {}".format(
+                        algorithm.num_gpus, world_size
+                    )
+                )
+            if not algorithm.matches_collective(phase.op_type):
+                raise MSCCLCompatibilityError(
+                    "MSCCL collective {!r} does not match phase op_type {!r}".format(
+                        algorithm.collective, phase.op_type
+                    )
+                )
+            graph = algorithm.lower(
+                rank=local_rank,
+                tensor_size=tensor_size,
+                dtype=dtype,
+                executor=executor,
+            )
+        except (KeyError, OSError, TypeError, MSCCLCompatibilityError) as exc:
+            raise OCSExecutionPlanError(
+                "cannot lower MSCCL phase {} from artifact {!r}: {}".format(
+                    phase.phase_id, phase.artifact_id, exc
+                )
+            ) from exc
+        return graph, phase.algorithm_type
 
     @staticmethod
     def _remap_group_ranks(graph: PrimitiveIRGraph, rank_list: tuple) -> None:

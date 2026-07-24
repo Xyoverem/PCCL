@@ -433,6 +433,16 @@ class WaitNotifyNode(IRNode):
 
 
 @dataclass
+class NoopNode(IRNode):
+    """Executable no-op used to retain schedule dependency positions."""
+
+    def __post_init__(self):
+        if self.op_type is None:
+            self.op_type = PrimitiveOpType.NOOP
+        IRNode.__post_init__(self)
+
+
+@dataclass
 class OcsBarrierNode(IRNode):
     """Host-control boundary for an OCS topology reconfiguration.
 
@@ -545,5 +555,5 @@ IRNodeVariant = Union[
     SmReduceNode, SmCopyNode, TmaCopyNode, TmaReduceNode,
     MultimemReduceNode, MultimemStoreNode,
     CeCopyNode, RdmaWriteNode, RdmaReadNode,
-    NotifyNode, WaitNotifyNode, OcsBarrierNode,
+    NotifyNode, WaitNotifyNode, NoopNode, OcsBarrierNode,
 ]

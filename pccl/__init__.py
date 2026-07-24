@@ -1,3 +1,4 @@
+
 """PCCL - Parallel Communication and Computing Library."""
 
 __version__ = "0.3.0"
@@ -7,12 +8,14 @@ from .dsl import (
     IRNode, IRNodeVariant,
     SmReduceNode, SmCopyNode, TmaCopyNode, TmaReduceNode,
     CeCopyNode, RdmaWriteNode, RdmaReadNode,
-    NotifyNode, WaitNotifyNode, OcsBarrierNode,
+    NotifyNode, WaitNotifyNode, NoopNode, OcsBarrierNode,
     OcsPhase, PrimitiveIRGraph,
     build_graph, Stream, CommunicationOp,
     AlgorithmBuffer, AlgorithmIRBuilder, AlgorithmIRError, AlgorithmIRLowerer,
     AlgorithmPrimitive, AlgorithmStep, AlgorithmStepBuilder, AlgorithmSync,
     AlgorithmTransfer, ChunkRef, CollectiveAlgorithmIR,
+    MSCCLBuffer, MSCCLCompatibilityError, MSCCLStepKey, MSCCLStepType,
+    MSCCLXMLAlgorithm, MSCCLXMLGpu, MSCCLXMLStep, MSCCLXMLThreadblock,
     Compiler, compile_to_json_string, compile_to_json_file,
 )
 from .ocs import (
@@ -24,6 +27,7 @@ from .ocs import (
     PreparedOcsCollectivePlan, PreparedOcsGraph,
     OCS_EXECUTION_PLAN_VERSION, OCSBarrierTransition, OCSExecutionPhase,
     OCSExecutionPlan, OCSRoutePlanSpec, CompiledExecutionPlan, ExecutionPlanCompiler,
+    MSCCLArtifact, MSCCLArtifactResolver,
     StaticPlanController, SwitchConnector, TorchDistributedSwitchConnector,
     OcsTorchPlanRunner, TorchCollectivePhase, TorchCollectivePlan,
     build_ring_allreduce_alltoall_plan, build_torch_allreduce_alltoall_plan,
@@ -39,13 +43,16 @@ __all__ = [
     "IRNode", "IRNodeVariant",
     "SmReduceNode", "SmCopyNode", "TmaCopyNode", "TmaReduceNode",
     "CeCopyNode", "RdmaWriteNode", "RdmaReadNode",
-    "NotifyNode", "WaitNotifyNode", "OcsBarrierNode",
+    "NotifyNode", "WaitNotifyNode", "NoopNode", "OcsBarrierNode",
     "OcsPhase", "PrimitiveIRGraph",
     "build_graph", "Stream", "CommunicationOp",
     "AlgorithmBuffer", "AlgorithmIRBuilder", "AlgorithmIRError",
     "AlgorithmIRLowerer", "AlgorithmPrimitive", "AlgorithmStep",
     "AlgorithmStepBuilder", "AlgorithmSync", "AlgorithmTransfer", "ChunkRef",
     "CollectiveAlgorithmIR",
+    "MSCCLBuffer", "MSCCLCompatibilityError", "MSCCLStepKey",
+    "MSCCLStepType", "MSCCLXMLAlgorithm", "MSCCLXMLGpu",
+    "MSCCLXMLStep", "MSCCLXMLThreadblock",
     "Compiler", "compile_to_json_string", "compile_to_json_file",
     "OCSError", "OCSBarrierTimeout", "OCSExecutionPlanError", "OCSLinkNotReady",
     "OCSPlan", "OCSPlanMismatchError",
@@ -57,6 +64,7 @@ __all__ = [
     "OCS_EXECUTION_PLAN_VERSION", "OCSBarrierTransition", "OCSExecutionPhase",
     "OCSExecutionPlan", "OCSRoutePlanSpec", "CompiledExecutionPlan",
     "ExecutionPlanCompiler",
+    "MSCCLArtifact", "MSCCLArtifactResolver",
     "StaticPlanController", "SwitchConnector", "TorchDistributedSwitchConnector",
     "OcsTorchPlanRunner", "TorchCollectivePhase", "TorchCollectivePlan",
     "build_ring_allreduce_alltoall_plan", "build_torch_allreduce_alltoall_plan",

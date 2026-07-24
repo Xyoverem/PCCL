@@ -5,8 +5,8 @@ lowering="${1:-generated}"
 iterations="${2:-3}"
 elements="${3:-4096}"
 
-if [[ "${lowering}" != "generated" && "${lowering}" != "template" ]]; then
-  echo "lowering must be generated or template" >&2
+if [[ "${lowering}" != "generated" && "${lowering}" != "template" && "${lowering}" != "msccl" ]]; then
+  echo "lowering must be generated, template, or msccl" >&2
   exit 2
 fi
 

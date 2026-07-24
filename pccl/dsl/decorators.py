@@ -18,6 +18,7 @@ from .nodes import (
     RdmaReadNode,
     NotifyNode,
     WaitNotifyNode,
+    NoopNode,
     OcsBarrierNode,
 )
 from .graph import PrimitiveIRGraph
@@ -210,6 +211,11 @@ class CommunicationOp:
 
     def wait_notify(self, signal_id: int, source_rank: int) -> WaitNotifyNode:
         node = WaitNotifyNode(signal_id=signal_id, source_rank=source_rank, device=self.default_device)
+        return self._add_node(node)
+
+    def noop(self) -> NoopNode:
+        """Insert an executable no-op while preserving stream dependencies."""
+        node = NoopNode(device=self.default_device)
         return self._add_node(node)
 
     def ocs_barrier(

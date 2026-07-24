@@ -190,3 +190,5 @@ Execution Plan JSON
 `graph_digest` 非空时，编译器会计算生成的 JSON v2 canonical SHA-256 并拒绝不一致的 artifact。字符串 `route_plan_id` 使用稳定哈希投影到 wire v1 的 uint64 字段，原始 route id 和 payload 仍完整保留在 canonical payload 中。
 
 MSCCL 风格 Algorithm IR v1 已提供 `chunk/step/copy/reduce/sync/dependency`，并可生成 Ring AllReduce 与 Direct AllToAll；详细接口见 [`ALGORITHM_IR_V1.md`](ALGORITHM_IR_V1.md)。tree/RHD 和其他 collective 仍由旧 Python 模板生成，尚未迁移。
+
+对 AICCL/RLCCL 等外部生成器，`artifact_id` 现在直接引用标准 MSCCL XML schedule。`ExecutionPlanCompiler(algorithm_lowering="msccl", artifact_resolver=...)` 会导入 XML，校验 `ngpus/coll` 与 phase 一致，再 lower 为 PCCL Primitive IR。OCS topology plan 仍保留在 `topology_id/barrier_after/route_plan`，不写入 MSCCL XML。接口和兼容范围见 [`MSCCL_COMPATIBILITY.md`](MSCCL_COMPATIBILITY.md)。

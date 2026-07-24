@@ -1,3 +1,4 @@
+
 """PCCL DSL - Python DSL Compiler Stack (CUDA-focused, v2 only)."""
 
 from .nodes import (
@@ -19,6 +20,7 @@ from .nodes import (
     RdmaReadNode,
     NotifyNode,
     WaitNotifyNode,
+    NoopNode,
     OcsBarrierNode,
 )
 from .graph import OcsPhase, PrimitiveIRGraph
@@ -37,6 +39,16 @@ from .algorithm_ir import (
     ChunkRef,
     CollectiveAlgorithmIR,
 )
+from .msccl_xml import (
+    MSCCLBuffer,
+    MSCCLCompatibilityError,
+    MSCCLStepKey,
+    MSCCLStepType,
+    MSCCLXMLAlgorithm,
+    MSCCLXMLGpu,
+    MSCCLXMLStep,
+    MSCCLXMLThreadblock,
+)
 from .compiler import (
     Compiler,
     compile_to_json_string,
@@ -50,13 +62,16 @@ __all__ = [
     "SmReduceNode", "SmCopyNode", "TmaCopyNode", "TmaReduceNode",
     "MultimemReduceNode", "MultimemStoreNode",
     "CeCopyNode", "RdmaWriteNode", "RdmaReadNode",
-    "NotifyNode", "WaitNotifyNode", "OcsBarrierNode",
+    "NotifyNode", "WaitNotifyNode", "NoopNode", "OcsBarrierNode",
     "OcsPhase", "PrimitiveIRGraph",
     "build_graph", "Stream", "CommunicationOp", "Pipeline",
     "AlgorithmBuffer", "AlgorithmIRBuilder", "AlgorithmIRError",
     "AlgorithmIRLowerer", "AlgorithmPrimitive", "AlgorithmStep",
     "AlgorithmStepBuilder", "AlgorithmSync", "AlgorithmTransfer",
     "ChunkRef", "CollectiveAlgorithmIR",
+    "MSCCLBuffer", "MSCCLCompatibilityError", "MSCCLStepKey",
+    "MSCCLStepType", "MSCCLXMLAlgorithm", "MSCCLXMLGpu",
+    "MSCCLXMLStep", "MSCCLXMLThreadblock",
     "Compiler", "compile_to_json_string", "compile_to_json_file",
     "discover_rules", "load_rules",
 ]
